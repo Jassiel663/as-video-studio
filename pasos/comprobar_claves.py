@@ -11,6 +11,7 @@ Aqui cada proveedor tiene su prueba, elegida para que NO cueste dinero:
     cartesia   GET /voices                 lista voces; no sintetiza nada
     jamendo    GET /tracks/?limit=1        una busqueda; el plan es gratuito
     freesound  GET /search/text/?page_size=1   idem
+    google     GET /v1beta/models          lista modelos y mira que este Veo
     claude     salud_cli.probar por cuenta  (haiku, una palabra: es lo minimo)
 
 LO QUE NO PUEDE DECIR, y se dice tal cual: que OpenAI tenga SALDO. La unica
@@ -174,6 +175,34 @@ def probar_freesound(clave):
                                       f"{_texto_corto(respuesta)}")
 
 
+def probar_google(clave):
+    if not clave:
+        return _ficha("google", "sin_clave", "no hay clave de Google; los planos "
+                                             "se animan con zoom, sin Veo")
+    respuesta, fallo = _pedir(
+        "GET", "https://generativelanguage.googleapis.com/v1beta/models",
+        params={"pageSize": 200}, headers={"x-goog-api-key": clave})
+    if respuesta is None:
+        return _ficha("google", "sin_red", f"no se ha podido hablar con Google: {fallo}")
+    if respuesta.status_code == 200:
+        try:
+            nombres = [m.get("name", "") for m in (respuesta.json() or {}).get("models", [])]
+        except ValueError:
+            nombres = []
+        if not any("veo" in n for n in nombres):
+            return _ficha("google", "mal", "la clave autentica pero no da acceso a Veo: "
+                                           "Veo solo va con la facturacion activada "
+                                           "(aistudio.google.com → Billing)")
+        return _ficha("google", "ok", "la clave autentica y tiene Veo. Lo que NO se "
+                                      "puede saber sin pagar un clip es si queda "
+                                      "saldo: se mira en AI Studio → Billing")
+    if respuesta.status_code in (400, 401, 403):
+        return _ficha("google", "mal", f"Google no reconoce la clave "
+                                       f"({respuesta.status_code}): {_texto_corto(respuesta)}")
+    return _ficha("google", "mal", f"Google contesta {respuesta.status_code}: "
+                                   f"{_texto_corto(respuesta)}")
+
+
 def probar_claude(cuentas):
     """Una ficha por cuenta del CLI con sesion, con lo que apunta salud_cli."""
     fichas = []
@@ -203,7 +232,8 @@ def probar_todas(cuentas_claude=(), con_claude=True):
         for proveedor, puesta in (("openai", bool(almacen["openai"])),
                                   ("cartesia", bool(almacen["cartesia"]["clave"])),
                                   ("jamendo", bool(almacen["jamendo"]["clave"])),
-                                  ("freesound", bool(almacen["freesound"]["clave"]))):
+                                  ("freesound", bool(almacen["freesound"]["clave"])),
+                                  ("google", bool(almacen["google"]["clave"]))):
             fichas.append(_ficha(proveedor, "ok" if puesta else "sin_clave",
                                  "simulado" if puesta else "sin poner"))
         if con_claude:
@@ -214,6 +244,7 @@ def probar_todas(cuentas_claude=(), con_claude=True):
         (probar_cartesia, almacen["cartesia"]["clave"]),
         (probar_jamendo, almacen["jamendo"]["clave"]),
         (probar_freesound, almacen["freesound"]["clave"]),
+        (probar_google, almacen["google"]["clave"]),
     )
     for funcion, clave in pruebas:
         try:
@@ -233,7 +264,7 @@ def probar_todas(cuentas_claude=(), con_claude=True):
 
 NOMBRES = {"openai": "OpenAI (imágenes)", "cartesia": "Cartesia (voz)",
            "jamendo": "Jamendo (música)", "freesound": "FreeSound (efectos)",
-           "claude": "Claude"}
+           "google": "Google Veo (vídeo)", "claude": "Claude"}
 
 
 def resumen_texto(fichas):

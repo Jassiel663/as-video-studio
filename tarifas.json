@@ -31,6 +31,20 @@
     "plan": "Pro con overages",
     "nota": "Plan Pro (5 $/mes, 100.000 creditos incluidos) con overages a 65 $ por millon de creditos. En Sonic, 1 credito = 1 caracter, asi que el caracter de mas cuesta 0,000065 $. Se anota el coste MARGINAL a proposito: los 100.000 creditos incluidos ya estan pagados cada mes, y prorratear los 5 $ haria que el mismo video costara distinto segun cuanto se hubiera usado antes. Los eventos anotados antes de fijar esta tarifa no se reescriben: el historico anterior sigue sin importe."
   },
+  "veo": {
+    "proveedor": "google",
+    "usd_por_segundo": {
+      "veo-3.1-lite-generate-preview": {
+        "720p": 0.05,
+        "1080p": 0.08
+      },
+      "veo-3.1-fast-generate-preview": {
+        "720p": 0.1,
+        "1080p": 0.12
+      },
+      "nota": "Precios oficiales de la Gemini API (ai.google.dev/gemini-api/docs/pricing, 29-09-2026), audio incluido. Se paga el clip ENTERO que devuelve Veo (4, 6 u 8 s), no lo que dura el plano: un plano de 2,6 s se paga como 4."
+    }
+  },
   "claude_cli": {
     "suma_al_total": false,
     "nota": "Va contra la suscripcion, no contra un contador con precio por llamada: se miden tokens y nunca dolares."

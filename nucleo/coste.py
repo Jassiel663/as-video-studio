@@ -18,6 +18,9 @@ Tres proveedores y tres unidades distintas:
                 caracteres y el importe marcado como 'sin tarifa'.
     claude_cli  SOLO tokens. Va contra la suscripcion, no contra un contador con
                 precio por llamada, asi que no lleva dolares y no suma al total.
+    veo         segundos de video de Google Veo (los planos sin texto que se
+                animan en el render). Se cobra el clip entero que devuelve la
+                API, no lo que dura el plano.
 
 Uso:
 
@@ -63,9 +66,10 @@ RUTA_GLOBAL = (os.environ.get("ESTUDIO_COSTE_GLOBAL")
                or os.path.join(RAIZ_ESTUDIO, "coste_global.jsonl"))
 NOMBRE_COSTE = "coste.jsonl"
 
-PROVEEDORES = ("openai", "tts", "claude_cli")
+PROVEEDORES = ("openai", "tts", "claude_cli", "veo")
 SIN_DOLARES = ("claude_cli",)            # se miden en tokens y no suman al total
-ETIQUETAS = {"openai": "OpenAI", "tts": "TTS", "claude_cli": "Claude"}
+ETIQUETAS = {"openai": "OpenAI", "tts": "TTS", "claude_cli": "Claude",
+             "veo": "Veo"}
 
 AVISO_PRESUPUESTO = 0.8                  # fraccion a partir de la cual se avisa
 
@@ -144,6 +148,12 @@ def tarifa_tokens():
     tabla = (tarifas().get("openai") or {}).get("usd_por_token") or {}
     return {clave: _numero(tabla.get(clave))
             for clave in ("entrada_texto", "entrada_imagen", "salida")}
+
+
+def tarifa_veo(modelo, resolucion="720p"):
+    """Dolares por segundo de video de ese modelo de Veo, o None si no hay."""
+    tabla = (tarifas().get("veo") or {}).get("usd_por_segundo") or {}
+    return _numero((tabla.get(modelo) or {}).get(resolucion))
 
 
 def tarifa_caracter():
@@ -425,12 +435,18 @@ def cabecera(proveedores, total_usd):
     abierto = proveedores.get("openai") or _vacio("openai")
     voz = proveedores.get("tts") or _vacio("tts")
     cli = proveedores.get("claude_cli") or _vacio("claude_cli")
-    return "     ".join([
+    video = proveedores.get("veo") or _vacio("veo")
+    partes = [
         f"OpenAI  {importe(abierto)} · {corto(abierto['tokens']['total'])} tok",
         f"TTS  {importe(voz)} · {corto(voz['cantidad']['caracteres'])} car",
         f"Claude  {corto(cli['tokens']['total'])} tok",
-        f"TOTAL  ${total_usd:.2f}",
-    ])
+    ]
+    # Veo solo sale si se ha usado: la inmensa mayoria de los videos no lo
+    # tocan, y una columna a cero en cada cabecera no dice nada.
+    if video["eventos"]:
+        partes.append(f"Veo  {importe(video)} · {video['eventos']} clips")
+    partes.append(f"TOTAL  ${total_usd:.2f}")
+    return "     ".join(partes)
 
 
 def agregar(registros):
@@ -603,6 +619,19 @@ def reportar_openai(usage, calidad, tamano, imagenes=1, operacion="imagen",
                    usd=importe,
                    # el importe sale de la tabla de tarifas, no de la factura:
                    # la cabecera lo pinta con un matiz distinto por eso mismo
+                   usd_estimado=True, detalle=ficha)
+
+
+def reportar_veo(segundos, modelo, resolucion="720p", operacion="animar",
+                 unidad=None, detalle=None):
+    """Anota un clip de Veo por los segundos que se han PAGADO (el clip entero)."""
+    segundos = float(segundos or 0)
+    precio = tarifa_veo(modelo, resolucion)
+    ficha = {"modelo": modelo, "resolucion": resolucion,
+             "segundos": round(segundos, 2)}
+    ficha.update(detalle or {})
+    return _anotar("veo", operacion, unidad=unidad,
+                   usd=None if precio is None else precio * segundos,
                    usd_estimado=True, detalle=ficha)
 
 

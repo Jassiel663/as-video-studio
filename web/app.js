@@ -2652,7 +2652,7 @@ async function probarCuentaCLI(cid) {
    tarjeta de la guía. */
 const NOMBRES_PROVEEDOR = {
   openai: 'OpenAI — imágenes', cartesia: 'Cartesia — voz', jamendo: 'Jamendo — música',
-  freesound: 'FreeSound — efectos', claude: 'Claude',
+  freesound: 'FreeSound — efectos', google: 'Google Veo — vídeo', claude: 'Claude',
 };
 
 function bloquePruebaClaves() {
@@ -2851,10 +2851,7 @@ function seccionOtrasClaves(ficha) {
     h('div', { clase: 'pista' },
       'Dos catálogos con licencia libre. Sin ellas el vídeo se monta igual, '
       + 'pero sin banda sonora ni efectos.'));
-  [['jamendo', 'Jamendo — música', 'el Client ID de tu aplicación en '
-    + 'developer.jamendo.com'],
-   ['freesound', 'FreeSound — efectos', 'la API key de tu cuenta en '
-    + 'freesound.org/apiv2/apply']].forEach(([id, titulo, pista]) => {
+  const fila = ([id, titulo, pista]) => {
     const puesta = ((ficha[id] || {}).puesta) || false;
     const cola = (ficha[id] || {}).cola || '';
     const campo = h('input', {
@@ -2879,7 +2876,20 @@ function seccionOtrasClaves(ficha) {
         clase: 'mini fantasma peligro',
         onclick: () => guardarClaves({ [id]: { clave: '' } }),
       }, 'Quitar') : null)));
-  });
+  };
+  [['jamendo', 'Jamendo — música', 'el Client ID de tu aplicación en '
+    + 'developer.jamendo.com'],
+   ['freesound', 'FreeSound — efectos', 'la API key de tu cuenta en '
+    + 'freesound.org/apiv2/apply']].forEach(fila);
+  // EL VIDEO, aparte porque no es sonido: la clave de la Gemini API con la que
+  // se animan los planos sin texto (pasos/animar.py). Igual de opcional: sin
+  // ella los planos salen con imagen y zoom, como siempre.
+  caja.appendChild(h('h3', {}, 'Vídeo'));
+  caja.appendChild(h('div', { clase: 'pista' },
+    'Para animar con Google Veo los planos sin texto. Se activa en cada vídeo, '
+    + 'en la tarjeta del montaje; sin clave los planos salen con imagen y zoom.'));
+  fila(['google', 'Google Veo — vídeo', 'la API key de aistudio.google.com/apikey '
+    + '(con la facturación activada: Veo no está en el plan gratuito)']);
   return caja;
 }
 
@@ -8150,6 +8160,59 @@ document.addEventListener('keydown', ev => {
 });
 
 
+/* ANIMAR CON VEO LOS PLANOS SIN TEXTO (pasos/animar.py). Es el param
+ * `video_ia` del render, y como todo param se guarda SOLO cuando alguien lo
+ * toca: leerlo no escribe nada, y un proyecto que nunca lo eligió sigue sin
+ * tenerlo (y con su firma intacta). Cambiarlo deja obsoleto el montaje, que es
+ * justo lo que tiene que pasar: el siguiente «Regenerar Vídeo» anima o deja de
+ * animar. Los clips ya pagados se guardan y no se vuelven a pagar. */
+const MODOS_VIDEO_IA = [
+  ['', 'Apagado — imagen y zoom, como siempre'],
+  ['lite', 'Veo Lite — ~0,05 $ por segundo de clip'],
+  ['fast', 'Veo Fast — ~0,10 $ por segundo, mejor movimiento'],
+];
+
+function filaVideoIaLight() {
+  const v = videoAbierto();
+  if (!v.pid) return h('span', {});
+  if (v.videoIa === undefined || v.videoIaPid !== v.pid) {
+    const pid = v.pid;
+    v.videoIa = null;
+    v.videoIaPid = pid;
+    pedir(API.paso(pid, 'render'))
+      .then(ficha => {
+        if (videoAbierto().pid !== pid) return;
+        videoAbierto().videoIa = String(((ficha || {}).params || {}).video_ia || '');
+        refrescarVivosLight();
+      })
+      .catch(() => { videoAbierto().videoIa = ''; });
+  }
+  if (v.videoIa === null) return h('span', {});
+  const sel = h('select', {
+    disabled: !!trabajoVideoLight(),
+    onchange: async ev => {
+      const valor = ev.target.value;
+      try {
+        await pedir(API.params(v.pid, 'render'),
+          { method: 'PUT', cuerpo: { params: { video_ia: valor } } });
+        v.videoIa = valor;
+        toast(valor ? `los planos sin texto se animarán con Veo (${valor}) al regenerar`
+                    : 'Veo apagado: los planos saldrán con imagen y zoom');
+        refrescarCosteLight(true);
+        refrescarVivosLight();
+      } catch (e) { toast(e.message, true); }
+    },
+    value: v.videoIa,
+  }, MODOS_VIDEO_IA.map(([valor, texto]) => h('option', { value: valor }, texto)));
+  return h('div', { clase: 'fila' },
+    conAyuda('Anima con Google Veo solo los planos SIN texto: los que llevan '
+      + 'letras, cifras, pantallas o carteles se quedan con imagen y zoom, porque '
+      + 'Veo deforma el texto. Necesita la clave de Google en Configuración › '
+      + 'Claves. Se aplica al pulsar «Regenerar Vídeo».',
+      h('b', {}, 'Planos en movimiento')),
+    sel);
+}
+
 function vistaVideoLight() {
   const v = videoAbierto();
   const caja = h('div', { clase: 'light-video' });
@@ -8183,6 +8246,7 @@ function vistaVideoLight() {
       trabajoVideoLight() ? 'montando los planos…' : 'todavía no hay vídeo'));
   }
   caja.appendChild(marco);
+  caja.appendChild(enVivo(filaVideoIaLight));
 
   /* LA TIRA DE VINETAS SOLO MIENTRAS SE GENERA.
      Con el video ya montado esta pantalla es para VERLO y comentarlo, y

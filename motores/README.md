@@ -25,6 +25,7 @@ llamando a `pasos/claves.py`.
 | `imagen_openai/` | Genera cada plano. Lleva dentro el freno del límite de la API, la cuenta del gasto y el reparto entre cuentas. |
 | `capa_vectorial/` | Lo que se dibuja ENCIMA del plano: cabeceras de capítulo (`cabecera`) y mapas encuadrados por región (`mapa`, con `datos/paises_110m.geojson`). |
 | `render_video/` | El recorrido de cámara de cada plano (`movimiento`): la ventana que se mueve por encima de una imagen quieta. |
+| `video_veo/` | Anima un plano con Google Veo a partir de su propia imagen (`veo`): imagen a vídeo, no texto a vídeo, para que el clip conserve el estilo y el reparto. Qué planos se animan lo decide `pasos/animar.py`. |
 | `reglas/` | Las reglas de dibujo aprendidas del feedback, con su procedencia (`reglas.json`) y el destilador que las escribe (`reglas.py`). |
 | `revision/` | Traduce a palabras lo que se ha pintado sobre una captura, para poder rehacer un plano con esa nota delante (`regenerar`). |
 

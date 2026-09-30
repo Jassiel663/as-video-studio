@@ -202,6 +202,30 @@ La burbuja de abajo a la derecha es `pasos/asistente.py` más las rutas
 
 ---
 
+## Los planos en movimiento (Veo)
+
+El render puede animar con Google Veo los planos **sin texto**
+(`pasos/animar.py`, motor `motores/video_veo/`). Lo que no se ve en el código:
+
+- **Es el param `video_ia` del render** (`""`/ausente, `lite`, `fast`) y
+  ausente es apagado. **No lo escribas por defecto**: por la regla 1 de arriba,
+  dejaría obsoleto el render de todos los proyectos.
+- **Ningún plano con texto se anima, y es medido, no prudencia**: en la prueba
+  del 29-09-2026 Veo borró la notificación de un plano y dejó ilegible la cifra
+  de otro. El texto se detecta leyendo la `direccion` del plan (el prompt de
+  imagen solo dibuja lo que va entre comillas), más pantallas, carteles,
+  cartelas y capas. Si un plano con letras sale animado, el fallo está en
+  `motivo_para_no_animar`, no en Veo.
+- **Se paga el clip entero** (4, 6 u 8 s; el de 8 solo existe a 1080p), no lo
+  que dura el plano. Los clips se guardan por huella en `<proyecto>/video_ia/`:
+  volver a renderizar no los vuelve a pagar.
+- **Un clip que falla no tumba el render**: el plano sale con imagen y zoom y
+  se dice en los avisos. Sin clave de Google, igual.
+- **La API de vídeo de OpenAI (Sora) ya no existe**: se cerró el 24-09-2026
+  y `/v1/videos` devuelve 404, aunque `/v1/models` siga listando `sora-2`.
+
+---
+
 ## Lo que NO hay, y no es un olvido
 
 Este producto sale de uno más grande, y estas piezas se quitaron a propósito.
@@ -267,7 +291,7 @@ que nunca la fijaron, y regenerarlas se paga.
 powershell -NoProfile -File pruebas.ps1
 ```
 
-Las veintitrés en verde, y las herramientas de análisis sin nada que decir
+Las veinticinco en verde, y las herramientas de análisis sin nada que decir
 (`huerfanas_js` trae dos sospechosas de siempre, `async` y `fallar`, que no son
 llamadas).
 Y si has tocado la interfaz, **ábrela**: una regla de CSS de menos o un bloque

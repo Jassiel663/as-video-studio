@@ -57,6 +57,9 @@ from . import medios, moodboard  # noqa: E402,F401
 # encuadres (que clase de plano es cada uno) lo
 # Wikimedia Commons; antes se llamaba commons.py, a un typo de comun.py) los
 from . import encuadres  # noqa: E402,F401
+# animar (que planos sin texto se animan con Veo) lo usan p8_render y el coste
+# previsto de app.py: va DECLARADO, como cta, y no de rebote por p8
+from . import animar  # noqa: E402,F401
 from . import p6_assets, p7_callouts, p8_render  # noqa: E402,F401
 # y repaso (lo que se escribe MIRANDO el video montado) el ultimo de los que
 # deciden: reparte notas en cambios de todos los pasos anteriores
@@ -97,5 +100,5 @@ __all__ = ["catalogo_visual", "conservar", "repaso",
            "p4_voz", "p5_revision_audio", "presets_voz", "presets_canal",
            "presets_light", "recetas", "sonido", "tipografia", "subtitulos", "tono", "transiciones",
            "voz_descrita",
-           "p6_assets", "p7_callouts", "p8_render",
+           "animar", "p6_assets", "p7_callouts", "p8_render",
            "MODULOS", "modulo_de"]

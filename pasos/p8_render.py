@@ -47,11 +47,16 @@ import websocket
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import animar  # noqa: E402
 import cartelas  # noqa: E402
 import estadisticas  # noqa: E402
 import medios  # noqa: E402
 import sonido  # noqa: E402
 import transiciones  # noqa: E402
+
+# el medidor, del mismo sitio del que lo toma `animar`: ese import ya sabe
+# resolverse tambien cuando el render corre como proceso de lote
+COSTE = animar.COSTE
 
 PARAMS_POR_DEFECTO = {
     "fps": 30,
@@ -118,11 +123,14 @@ def describir(params):
     reparto = ("en fila" if lotes == 1 else
                f"{lotes} planos a la vez" if lotes > 1 else
                "varios planos a la vez, uno por proceso")
+    modo = animar.modo_de(p)
+    veo = (f" Los planos sin texto se animan con Google Veo ({modo})."
+           if modo else "")
     return (f"Renderiza cada plano a un clip {ancho}x{alto} a {p['fps']} fps "
             f"(calidad {p['calidad_video']}, {reparto}), con el zoom leido del "
             f"hyperframe y la capa vectorial encima, encadena con "
             f"{transiciones.describir(p)} y concatena sin recodificar mezclando "
-            f"la narracion con {sonido.describir(p)}.")
+            f"la narracion con {sonido.describir(p)}.{veo}")
 
 
 def _con_defectos(params):
@@ -352,10 +360,11 @@ html,body{margin:0;padding:0;background:#0b0c09;overflow:hidden}
 // dos imagenes como TEXTURAS y de un div no se saca una textura.
 const MOV = __MOV__, W = __W__, H = __H__, HW = __HW__, HH = __HH__;
 const DUR = __DUR__, FPS = __FPS__;
-// AQUI VIVIA `FOTOGRAMAS`, la tira de imagenes de un plano de metraje grabado.
-// Se retiro entera con la pool de clips: todos los planos son una imagen quieta,
-// asi que el render vuelve a saber de una sola cosa -- una imagen y una ventana
-// que se mueve por encima.
+// LOS FOTOGRAMAS DE UN PLANO ANIMADO CON VEO (pasos/animar.py). Vacio en un
+// plano normal, que es una imagen quieta con la ventana moviendose encima. En
+// uno animado la camara ya la trae el clip: la ventana va a cuadro completo y
+// lo que cambia en cada instante es la imagen de #fondo.
+const FOTOGRAMAS = __FOTOGRAMAS__, FPS_CLIP = __FPS_CLIP__;
 const camara = document.getElementById('camara');
 const fondo = document.getElementById('fondo');
 const svg = document.querySelector('#capa svg');
@@ -402,6 +411,16 @@ function pintar(t){
     'px) scale(' + s.toFixed(6) + ')';
   if (svg && svg.setCurrentTime) svg.setCurrentTime(t);
   if (svgFijo && svgFijo.setCurrentTime) svgFijo.setCurrentTime(t);
+  if (FOTOGRAMAS.length) {
+    // El fotograma del clip que toca en t. Se espera a que este DECODIFICADO
+    // antes de devolver: capturar con la imagen a medio cargar da un fotograma
+    // en negro, y eso no da error, da un parpadeo en el video.
+    const i = Math.min(FOTOGRAMAS.length - 1, Math.floor(t * FPS_CLIP + 1e-6));
+    if (fondo.getAttribute('src') !== FOTOGRAMAS[i]) {
+      fondo.setAttribute('src', FOTOGRAMAS[i]);
+      return fondo.decode().then(() => 1, () => 1);
+    }
+  }
   // Sigue devolviendo 1 y no undefined: quien llama hace
   // `Promise.resolve(pintar(t))`, asi que un valor pelado vale igual.
   return 1;
@@ -414,11 +433,15 @@ def _url_local(ruta):
     return "file:///" + os.path.abspath(ruta).replace("\\", "/")
 
 
-def _pagina_de(escena, mov, capa_svg, hyper, p, destino, capa_fija="", fps=30):
+def _pagina_de(escena, mov, capa_svg, hyper, p, destino, capa_fija="", fps=30,
+               fotogramas=None, fps_clip=24.0):
     ancho, alto = [int(v) for v in p["resolucion"]]
     hw, hh = mov.get("hyperframe_px") or [3072, 2048]
     duracion = float(escena["t_out"]) - float(escena["t_in"])
     html = (PAGINA
+            .replace("__FOTOGRAMAS__",
+                     json.dumps([_url_local(r) for r in (fotogramas or [])]))
+            .replace("__FPS_CLIP__", f"{float(fps_clip or 24.0):.4f}")
             .replace("__W__", str(ancho)).replace("__H__", str(alto))
             .replace("__HW__", str(hw)).replace("__HH__", str(hh))
             .replace("__FONDO__", _url_local(hyper))
@@ -884,7 +907,9 @@ def renderizar_plano(tarea, navegador=None):
     pagina = _pagina_de(tarea["escena"], tarea["mov"], tarea["capa"],
                         tarea["hyper"], {"resolucion": tarea["resolucion"]},
                         os.path.join(carpeta, "escena.html"),
-                        capa_fija=tarea.get("capa_fija") or "", fps=fps)
+                        capa_fija=tarea.get("capa_fija") or "", fps=fps,
+                        fotogramas=tarea.get("fotogramas"),
+                        fps_clip=tarea.get("fps_clip") or 24.0)
 
     navegador.abrir(pagina)
     for numero in range(total):
@@ -922,12 +947,17 @@ def renderizar_plano(tarea, navegador=None):
     medios.borrar(pagina)
     if not tarea.get("conservar_frames"):
         shutil.rmtree(carpeta, ignore_errors=True)
-    return {"id": sid, "frames": total,
-            "duracion": round(total / float(fps), 3),
-            "transicion": corte.get("tipo") or "corte",
-            "ranura": corte.get("ranura") or "corte",
-            "frames_transicion": pintados,
-            "origen": "renderizado"}
+    ficha = {"id": sid, "frames": total,
+             "duracion": round(total / float(fps), 3),
+             "transicion": corte.get("tipo") or "corte",
+             "ranura": corte.get("ranura") or "corte",
+             "frames_transicion": pintados,
+             "origen": "renderizado"}
+    # solo se dice en los animados: la ficha de un plano normal sale igual que
+    # antes de que existiera Veo
+    if tarea.get("fotogramas"):
+        ficha["animado"] = True
+    return ficha
 
 
 def correr_lote(tareas, senal_vivo=None):
@@ -1100,6 +1130,85 @@ def _correr_lotes_en_procesos(lotes, trabajo, avisar, total_planos,
 
 #: Lo que este paso entiende como opcion DE ESTA INVOCACION (no es un param y
 #: no mueve la firma): volver a montar el MP4 sin tocar un solo clip.
+#: Cuantos clips de Veo se piden a la vez. Cada uno tarda ~45 s en el servidor
+#: de Google y el limite de la API es por minuto: cuatro en paralelo ponen un
+#: video de ochenta planos animados en un cuarto de hora, sin rozar el tope.
+VEO_A_LA_VEZ = 4
+
+
+def _animar_tareas(candidatos, proyecto, modo, ancho, alto, trabajo, avisar):
+    """Pide (o saca del cache) el clip de Veo de cada candidato y lo engancha.
+
+    `candidatos` son (tarea, escena del plan, hyperframe, movimiento). A cada
+    tarea que sale bien se le ponen sus fotogramas, la ventana a cuadro
+    completo y el primer fotograma como fondo. La que falla SE QUEDA COMO
+    ESTABA --imagen quieta y zoom-- y se dice en los avisos: un clip que Veo
+    rechaza no puede tumbar el render de un video entero. -> [avisos]
+    """
+    if not candidatos:
+        return []
+    veo = medios.motor("video_veo/veo.py")
+    if not veo.clave():
+        return [f"{len(candidatos)} plano(s) sin texto se podían animar con Veo, "
+                f"pero no hay clave de Google: ponla en Configuración › Claves. "
+                f"Han salido con imagen y zoom, como siempre."]
+    contexto = COSTE.contexto_actual()
+    hechos = {"pagados": 0, "cache": 0, "listos": 0}
+    candado = threading.Lock()
+    fallos = []
+
+    def uno(tarea, escena, hyper, mov):
+        def pedir():
+            ruta, pagado = animar.clip(proyecto, escena, hyper, ancho, alto, modo,
+                                       ventana=mov.get("ventana_ini"))
+            return ruta, pagado
+        # el hilo no hereda la pila de contexto del medidor: se la pone igual
+        # que la del render, o el gasto se anotaria sin proyecto
+        if contexto is not None:
+            with COSTE.contexto(contexto.medidor, contexto.paso):
+                ruta, pagado = pedir()
+        else:
+            ruta, pagado = pedir()
+        segundos = float(escena["t_out"]) - float(escena["t_in"])
+        rutas, fps_clip = animar.fotogramas(
+            ruta, os.path.join(trabajo, "animados", tarea["id"]), ancho, alto,
+            segundos)
+        with candado:
+            hechos["pagados" if pagado else "cache"] += 1
+            hechos["listos"] += 1
+            avisar(0.02 + 0.03 * hechos["listos"] / len(candidatos),
+                   f"animando con Veo: {hechos['listos']} de {len(candidatos)}")
+        return rutas, fps_clip
+
+    avisar(0.02, f"animando con Veo {len(candidatos)} plano(s) sin texto")
+    with ThreadPoolExecutor(max_workers=VEO_A_LA_VEZ) as pool:
+        futuros = {pool.submit(uno, *c): c for c in candidatos}
+        for futuro in as_completed(futuros):
+            tarea = futuros[futuro][0]
+            try:
+                rutas, fps_clip = futuro.result()
+            except Exception as fallo:                     # noqa: BLE001
+                fallos.append(f"{tarea['id']} ({type(fallo).__name__}: "
+                              f"{str(fallo)[:120]})")
+                continue
+            tarea["fotogramas"] = rutas
+            tarea["fps_clip"] = fps_clip
+            tarea["hyper"] = rutas[0]
+            tarea["mov"] = {"ventana_ini": [0, 0, 1, 1], "ventana_fin": [0, 0, 1, 1],
+                            "hyperframe_px": [ancho, alto]}
+
+    avisos = []
+    if hechos["listos"]:
+        avisos.append(f"{hechos['listos']} plano(s) animados con Veo ({modo}): "
+                      f"{hechos['pagados']} generados ahora, {hechos['cache']} "
+                      f"reutilizados sin volver a pagar.")
+    if fallos:
+        avisos.append(f"{len(fallos)} plano(s) no se pudieron animar y han salido "
+                      f"con imagen y zoom: " + "; ".join(fallos[:4])
+                      + (f" y {len(fallos) - 4} más" if len(fallos) > 4 else ""))
+    return avisos
+
+
 OPCIONES_EJECUCION = ("solo_montar",)
 
 
@@ -1196,6 +1305,10 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
     resultados = {}
     clips = []
     tareas = []
+    # LOS PLANOS SIN TEXTO QUE SE ANIMAN CON VEO, si el render lo pide. Apagado
+    # (lo normal) esta lista se queda vacia y el render es el de siempre.
+    modo_veo = "" if solo_montar else animar.modo_de(params)
+    candidatos_veo = []
     for indice, escena in enumerate(escenas):
         sid = escena["id"]
         uid = f"escena:{sid}"
@@ -1262,6 +1375,8 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
             "corte": {k: v for k, v in (cortes.get(sid) or {}).items()},
             "pagina_trans": pagina_trans,
             "conservar_frames": bool(p["conservar_frames"])})
+        if modo_veo and animar.motivo_para_no_animar(escena, svg) is None:
+            candidatos_veo.append((tareas[-1], escena, hyper, mov))
 
     # QUIEN TIENE QUE ESPERAR A QUIEN. La transicion de un plano se cuece sobre
     # el ULTIMO FOTOGRAMA del anterior, asi que si ese plano tambien se
@@ -1279,6 +1394,9 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
         if (tarea["anterior"] and not tarea["esperar_anterior"]
                 and not os.path.exists(tarea["anterior"])):
             tarea["anterior"] = None
+
+    avisos_veo = _animar_tareas(candidatos_veo, proyecto, modo_veo, ancho, alto,
+                                trabajo, avisar) if modo_veo else []
 
     if tareas:
         lotes = _repartir_lotes(tareas, _cuantos_lotes(p, len(tareas)))
@@ -1303,6 +1421,7 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
     if not p["conservar_frames"]:
         shutil.rmtree(dir_frames, ignore_errors=True)
         shutil.rmtree(os.path.join(trabajo, "lotes"), ignore_errors=True)
+        shutil.rmtree(os.path.join(trabajo, "animados"), ignore_errors=True)
 
     # ------------------------------------------------------------- sonido
     # Va DESPUES de los clips y antes de montar, y no toca el video: la banda
@@ -1368,7 +1487,7 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
     else:
         rehechas = {uid: ficha for uid, ficha in resultados.items() if uid in pedidas}
 
-    avisos = []
+    avisos = list(avisos_veo)
     if arrastrados:
         avisos.append(
             f"{len(arrastrados)} clip(s) se han rehecho sin pedirlos "
