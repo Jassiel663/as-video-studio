@@ -5361,34 +5361,16 @@ function vistaGaleriaLight() {
      una recarga, del móvil, de otro día— y sin esta lista un vídeo a medio
      generar no tenía desde dónde retomarse: seguía corriendo en el servidor y
      no había ningún camino hasta él. */
-  const videos = videosLight();
+  const videos = videosLight().filter(v => !v.short_de);
   if (videos.length) {
     caja.appendChild(h('div', { clase: 'light-cab' },
       h('h2', {}, 'Tus vídeos'),
       h('span', { clase: 'meta' }, `${videos.length} con este modo`)));
     const lista = h('div', { clase: 'videos-light' });
-    videos.forEach(video => lista.appendChild(h('div', { clase: 'video-light' },
-      h('button', {
-        clase: 'abrir', title: 'Seguir con este vídeo',
-        onclick: () => abrirVideoLight(video.id),
-      },
-        h('span', { clase: 'nombre' }, video.nombre || video.id),
-        h('span', { clase: 'meta' }, fechaCorta(video.actualizado) || '')),
-      /* EL LAPIZ VA FUERA DEL BOTON DE ABRIR. Un boton dentro de otro no es
-         HTML valido y el clic acabaria abriendo el video en vez de renombrarlo
-         — la misma razon por la que la tarjeta de un estilo es un div con un
-         boton grande dentro y no un boton entero. */
-      h('button', {
-        clase: 'mini fantasma renombrar', title: 'Cambiar el nombre',
-        'aria-label': `Cambiar el nombre de ${video.nombre || video.id}`,
-        onclick: () => renombrarVideoLight(video),
-      }, '✏️'),
-      h('button', {
-        clase: 'mini fantasma peligro', title: 'A la papelera de proyectos',
-        onclick: () => apartarVideoLight(video),
-      }, 'Apartar'))));
+    videos.forEach(video => lista.appendChild(filaVideoLista(video)));
     caja.appendChild(lista);
   }
+  caja.appendChild(seccionShortsLight(videos));
 
   /* LOS INTENTOS A MEDIAS. Un taller nace antes que su estilo, así que una
      generación que falla deja una carpeta de cientos de megas sin nadie que la
@@ -5458,6 +5440,108 @@ function tarjetaNuevoEstilo(cuantos) {
    se ven también en el modo editor, que es lo que son. */
 function videosLight() {
   return ((APP.light.datos || {}).videos || []).slice();
+}
+
+/* UNA FILA DE LA LISTA DE VÍDEOS: abrir, renombrar y apartar. La usan «Tus
+   vídeos» y «Shorts», que son la misma clase de cosa (proyectos) en dos cajas. */
+function filaVideoLista(video) {
+  return h('div', { clase: 'video-light' },
+    h('button', {
+      clase: 'abrir', title: 'Seguir con este vídeo',
+      onclick: () => abrirVideoLight(video.id),
+    },
+      h('span', { clase: 'nombre' }, video.nombre || video.id),
+      h('span', { clase: 'meta' }, fechaCorta(video.actualizado) || '')),
+    /* EL LAPIZ VA FUERA DEL BOTON DE ABRIR. Un boton dentro de otro no es
+       HTML valido y el clic acabaria abriendo el video en vez de renombrarlo
+       — la misma razon por la que la tarjeta de un estilo es un div con un
+       boton grande dentro y no un boton entero. */
+    h('button', {
+      clase: 'mini fantasma renombrar', title: 'Cambiar el nombre',
+      'aria-label': `Cambiar el nombre de ${video.nombre || video.id}`,
+      onclick: () => renombrarVideoLight(video),
+    }, '✏️'),
+    h('button', {
+      clase: 'mini fantasma peligro', title: 'A la papelera de proyectos',
+      onclick: () => apartarVideoLight(video),
+    }, 'Apartar'));
+}
+
+/* LOS SHORTS: SU PROPIA CAJA. Se elige de qué vídeo sale y cuánto dura (15 a 60
+   s), y se crea: es el mismo `POST /short` que el botón de la pantalla del
+   vídeo, con el mismo material, voz y estilo, guion corto nuevo y vertical.
+   Debajo, los shorts ya hechos, separados de los vídeos normales por
+   `short_de`, que es de dónde salieron. */
+const SHORT_S = { minimo: 15, maximo: 60, paso: 5 };
+
+function seccionShortsLight(origenes) {
+  const caja = h('div', { clase: 'bloque-shorts' });
+  const shorts = videosLight().filter(v => v.short_de);
+  caja.appendChild(h('div', { clase: 'light-cab' },
+    h('h2', {}, 'Shorts'),
+    h('span', { clase: 'meta' }, shorts.length
+      ? `${shorts.length} short${shorts.length === 1 ? '' : 's'}`
+      : 'vídeos verticales de 15 a 60 s sacados de tus vídeos')));
+  if (!origenes.length) {
+    caja.appendChild(h('div', { clase: 'pista' },
+      'Haz primero un vídeo: un short se saca de uno que ya exista.'));
+  } else {
+    const l = APP.light;
+    if (!origenes.some(v => v.id === l.shortOrigen)) l.shortOrigen = origenes[0].id;
+    if (!l.shortSegundos) l.shortSegundos = SHORT_S.maximo;
+    const etiqueta = h('b', {}, `${l.shortSegundos} s`);
+    caja.appendChild(h('div', { clase: 'fila' },
+      h('span', {}, 'De qué vídeo'),
+      h('select', {
+        onchange: ev => { l.shortOrigen = ev.target.value; },
+        value: l.shortOrigen,
+      }, origenes.map(v => h('option', { value: v.id }, v.nombre || v.id)))));
+    caja.appendChild(h('div', { clase: 'fila' },
+      h('span', {}, 'Duración'),
+      h('input', {
+        type: 'range', min: String(SHORT_S.minimo), max: String(SHORT_S.maximo),
+        step: String(SHORT_S.paso), value: String(l.shortSegundos),
+        oninput: ev => {
+          l.shortSegundos = Number(ev.target.value);
+          etiqueta.textContent = `${l.shortSegundos} s`;
+        },
+      }),
+      etiqueta));
+    caja.appendChild(h('div', { clase: 'fila' },
+      conAyuda('Crea un vídeo VERTICAL con el mismo material, voz y estilo, y un '
+        + 'guion corto nuevo: gancho en la primera frase y una sola idea. El '
+        + 'vídeo original no se toca. Al crearlo se abre, y lo generas como '
+        + 'cualquier otro (con su presupuesto delante).',
+        h('button', {
+          clase: 'primario', disabled: !!l.creandoShort,
+          onclick: () => crearShortLight(l.shortOrigen, l.shortSegundos),
+        }, l.creandoShort ? 'creando…' : 'Crear short'))));
+  }
+  if (shorts.length) {
+    const lista = h('div', { clase: 'videos-light' });
+    shorts.forEach(video => lista.appendChild(filaVideoLista(video)));
+    caja.appendChild(lista);
+  }
+  return caja;
+}
+
+async function crearShortLight(pid, segundos) {
+  if (!pid) return;
+  APP.light.creandoShort = true;
+  pintarLight();
+  try {
+    const datos = await pedir(API.short(pid),
+      { method: 'POST', cuerpo: { duracion_s: Math.round(Number(segundos) || 60) } });
+    const nuevo = (datos.proyecto || {}).id;
+    if (!nuevo) throw new Error('el servidor no ha devuelto el vídeo nuevo');
+    toast('short creado: pulsa «Generar» cuando quieras');
+    await cargarGaleriaLight(true);
+    await abrirVideoLight(nuevo);
+  } catch (e) {
+    toast(`no se ha podido crear el short: ${e.message}`, true);
+  } finally {
+    APP.light.creandoShort = false;
+  }
 }
 
 /* CAMBIAR EL NOMBRE DE UN VIDEO. Sirve `PUT /api/proyectos/{pid}`, que cambia
@@ -5540,24 +5624,16 @@ function menuDeEstilo(ficha) {
 async function hacerShortLight() {
   const v = videoAbierto();
   if (!v.pid) return;
-  const texto = prompt('¿Cuántos segundos debe durar el short? (15 a 180)', '60');
+  const texto = prompt(`¿Cuántos segundos debe durar el short? (${SHORT_S.minimo} a ${SHORT_S.maximo})`,
+                       String(SHORT_S.maximo));
   if (texto === null) return;
   const segundos = Number(texto);
-  if (!Number.isFinite(segundos) || segundos < 15 || segundos > 180) {
-    toast('un short dura entre 15 y 180 segundos', true);
+  if (!Number.isFinite(segundos) || segundos < SHORT_S.minimo || segundos > SHORT_S.maximo) {
+    toast(`un short dura entre ${SHORT_S.minimo} y ${SHORT_S.maximo} segundos`, true);
     return;
   }
-  toast('preparando el short…');
-  try {
-    const datos = await pedir(API.short(v.pid),
-      { method: 'POST', cuerpo: { duracion_s: Math.round(segundos) } });
-    const nuevo = (datos.proyecto || {}).id;
-    if (!nuevo) throw new Error('el servidor no ha devuelto el vídeo nuevo');
-    toast('short creado: revisa el guion y pulsa «Generar»');
-    await abrirVideoLight(nuevo);
-  } catch (e) {
-    toast(`no se ha podido crear el short: ${e.message}`, true);
-  }
+  // el mismo camino que la caja «Shorts» de la portada: un solo sitio que crea
+  await crearShortLight(v.pid, segundos);
 }
 
 function editarEstiloLight(ficha) {
@@ -8451,7 +8527,7 @@ function vistaVideoLight() {
        una frase suelta y descargar-- y no habia forma de leer los grupos. */
     h('span', { clase: 'crece' }),
     botonAplicarRepaso(),
-    conAyuda('Crea un vídeo VERTICAL de ~60 s con el mismo material, voz y '
+    conAyuda('Crea un vídeo VERTICAL de 15 a 60 s con el mismo material, voz y '
       + 'estilo, y un guion corto nuevo pensado para Shorts. Este vídeo no se '
       + 'toca. El short se genera aparte, con su propio presupuesto.',
       h('button', {

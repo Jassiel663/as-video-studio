@@ -856,6 +856,8 @@ def listar_proyectos():
             # video a medio generar no tiene desde donde retomarse.
             "video_light": bool(ficha.get(CONFIG_VIDEO_LIGHT)),
             "estilo_light": ficha.get(CONFIG_ESTILO_LIGHT) or "",
+            # de que video salio, si es un short: la pantalla los separa
+            "short_de": ficha.get(CONFIG_SHORT_DE) or "",
         })
     return {"proyectos": fichas, "raiz": raiz_proyectos()}
 
@@ -954,10 +956,17 @@ def duplicar_proyecto(pid: str, cuerpo: dict = Body(default=None)):
             "pasos": [ficha_paso(destino, p["id"]) for p in PASOS]}
 
 
-#: Cuanto puede durar un short. YouTube los admite hasta tres minutos; por
-#: debajo de quince segundos no hay sitio para un gancho y una idea.
-DURACION_SHORT_S = (15, 180)
+#: Cuanto puede durar un short. Por debajo de quince segundos no hay sitio para
+#: un gancho y una idea, y por encima de sesenta deja de ser el formato corto
+#: que se busca (lo pidio asi el canal, 30-09-2026).
+DURACION_SHORT_S = (15, 60)
 DURACION_SHORT_POR_DEFECTO = 60
+#: Cuanto se puede pasar o quedar corto. El brief deja un ±30 % por defecto, y
+#: con eso un short de 60 s salio de 67: en un formato con tope, eso es pasarse.
+TOLERANCIA_SHORT = 0.10
+#: En la config del short: de que video salio. Es lo que lo separa de los
+#: videos normales en la pantalla y lo que dice de donde viene.
+CONFIG_SHORT_DE = "short_de"
 
 #: Lo que se le anade al brief. Un short NO es el video largo recortado: pide
 #: su propio guion, con el gancho en la primera frase y una sola idea.
@@ -997,7 +1006,10 @@ def hacer_short(pid: str, cuerpo: dict = Body(default=None)):
     destino.estado.actualizar_params("brief", {
         "formato": "vertical",
         "duracion_objetivo_s": segundos,
+        "tolerancia": TOLERANCIA_SHORT,
     })
+    destino.proyecto.config[CONFIG_SHORT_DE] = ctx.id
+    destino.proyecto.guardar_config()
     # EL GUION: la nota de short va a las indicaciones del video
     # (`prompt_general`), detras de las que ya hubiera. Y se sueltan las dos
     # cosas del largo que no valen para un short: sus correcciones a mano por

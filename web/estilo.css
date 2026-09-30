@@ -1869,6 +1869,13 @@ button.primario.grande { padding: 9px 18px; font-size: 14px; }
    una parrilla: lo que se busca aquí es EL que estabas haciendo, no elegir
    entre varios mirándolos. */
 .videos-light { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+/* La caja de los shorts: el creador (de que video, cuanto dura) y debajo los
+   shorts ya hechos, con la misma fila que «Tus vídeos». */
+.bloque-shorts { margin-top: 18px; }
+.bloque-shorts .fila { margin-bottom: 8px; }
+.bloque-shorts .fila > span:first-child { min-width: 110px; }
+.bloque-shorts select { max-width: 100%; }
+.bloque-shorts input[type="range"] { flex: 1; min-width: 140px; }
 .video-light {
   display: flex; align-items: center; gap: 10px;
   border: 1px solid var(--linea); border-radius: 9px; padding: 7px 11px;
