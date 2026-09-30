@@ -410,6 +410,7 @@ const API = {
   valoracion: () => `${BASE}/api/estadisticas/valoracion`,
   apartar: pid => `${BASE}/api/proyectos/${encodeURIComponent(pid)}`,
   duplicar: pid => `${BASE}/api/proyectos/${encodeURIComponent(pid)}/duplicar`,
+  short: pid => `${BASE}/api/proyectos/${encodeURIComponent(pid)}/short`,
   papelera: () => `${BASE}/api/proyectos/papelera`,
   papeleraFicha: carpeta => `${BASE}/api/proyectos/papelera/${encodeURIComponent(carpeta)}`,
   restaurar: carpeta => `${BASE}/api/proyectos/papelera/${encodeURIComponent(carpeta)}/restaurar`,
@@ -5532,6 +5533,33 @@ function menuDeEstilo(ficha) {
   return h('div', { clase: 'esquina' }, puntos, menu);
 }
 
+/* UN SHORT DEL MISMO CONTENIDO (POST /short): un duplicado desde el brief con
+ * formato vertical y duración de short. Se abre el nuevo, que empieza en el
+ * guion: no se ha pagado nada todavía, y lo que se pague sale en su presupuesto
+ * antes de pulsar «Generar». */
+async function hacerShortLight() {
+  const v = videoAbierto();
+  if (!v.pid) return;
+  const texto = prompt('¿Cuántos segundos debe durar el short? (15 a 180)', '60');
+  if (texto === null) return;
+  const segundos = Number(texto);
+  if (!Number.isFinite(segundos) || segundos < 15 || segundos > 180) {
+    toast('un short dura entre 15 y 180 segundos', true);
+    return;
+  }
+  toast('preparando el short…');
+  try {
+    const datos = await pedir(API.short(v.pid),
+      { method: 'POST', cuerpo: { duracion_s: Math.round(segundos) } });
+    const nuevo = (datos.proyecto || {}).id;
+    if (!nuevo) throw new Error('el servidor no ha devuelto el vídeo nuevo');
+    toast('short creado: revisa el guion y pulsa «Generar»');
+    await abrirVideoLight(nuevo);
+  } catch (e) {
+    toast(`no se ha podido crear el short: ${e.message}`, true);
+  }
+}
+
 function editarEstiloLight(ficha) {
   irALight('preset', { abierto: ficha.id, feedback: {} });
 }
@@ -8417,6 +8445,13 @@ function vistaVideoLight() {
        una frase suelta y descargar-- y no habia forma de leer los grupos. */
     h('span', { clase: 'crece' }),
     botonAplicarRepaso(),
+    conAyuda('Crea un vídeo VERTICAL de ~60 s con el mismo material, voz y '
+      + 'estilo, y un guion corto nuevo pensado para Shorts. Este vídeo no se '
+      + 'toca. El short se genera aparte, con su propio presupuesto.',
+      h('button', {
+        clase: 'mini', disabled: !!trabajoVideoLight(),
+        onclick: () => hacerShortLight(),
+      }, 'Hacer un short')),
     hayMp4Light() ? conAyuda(
       'Baja el MP4 tal y como esta ahora mismo.',
       h('a', {

@@ -954,6 +954,70 @@ def duplicar_proyecto(pid: str, cuerpo: dict = Body(default=None)):
             "pasos": [ficha_paso(destino, p["id"]) for p in PASOS]}
 
 
+#: Cuanto puede durar un short. YouTube los admite hasta tres minutos; por
+#: debajo de quince segundos no hay sitio para un gancho y una idea.
+DURACION_SHORT_S = (15, 180)
+DURACION_SHORT_POR_DEFECTO = 60
+
+#: Lo que se le anade al brief. Un short NO es el video largo recortado: pide
+#: su propio guion, con el gancho en la primera frase y una sola idea.
+INSTRUCCIONES_SHORT = (
+    "ESTE VIDEO ES UN SHORT VERTICAL de unos {segundos} segundos, sacado del "
+    "mismo material que el video largo. La primera frase es un gancho que obliga "
+    "a quedarse; despues, UNA sola idea --la mas sorprendente del material-- "
+    "contada rapido y con ritmo; y un cierre corto. Nada de presentacion, "
+    "indice ni despedida larga.")
+
+
+@app.post("/api/proyectos/{pid}/short", status_code=201)
+def hacer_short(pid: str, cuerpo: dict = Body(default=None)):
+    """Un SHORT vertical del mismo contenido. -> el proyecto nuevo.
+
+    Es un `duplicar` desde el brief: se quedan el material, la voz, el estilo y
+    sus ajustes (tambien Veo), y el guion, las imagenes y el montaje quedan por
+    hacer, porque un short vertical necesita los suyos. El brief nuevo pide
+    formato vertical, la duracion del short y un guion de short. El original no
+    se toca.
+    """
+    ctx = contexto(pid)
+    datos = _cuerpo(cuerpo)
+    try:
+        segundos = int(datos.get("duracion_s") or DURACION_SHORT_POR_DEFECTO)
+    except (TypeError, ValueError):
+        raise ErrorApi(400, "'duracion_s' tiene que ser un numero de segundos")
+    minimo, maximo = DURACION_SHORT_S
+    if not minimo <= segundos <= maximo:
+        raise ErrorApi(400, f"un short dura entre {minimo} y {maximo} segundos")
+    original = ctx.proyecto.config.get("nombre") or ctx.id
+    nombre = str(datos.get("nombre") or "").strip() or f"Short - {original}"
+    copia = duplicar_proyecto(pid, {"nombre": nombre, "desde": "brief"})
+    destino = contexto(copia["proyecto"]["id"])
+    # EL BRIEF: formato y duracion, y NADA MAS. Sus `instrucciones` son la guia
+    # de tono del canal (ver `_aplicar_encargo_light`): se quedan como estan.
+    destino.estado.actualizar_params("brief", {
+        "formato": "vertical",
+        "duracion_objetivo_s": segundos,
+    })
+    # EL GUION: la nota de short va a las indicaciones del video
+    # (`prompt_general`), detras de las que ya hubiera. Y se sueltan las dos
+    # cosas del largo que no valen para un short: sus correcciones a mano por
+    # bloque (son de OTRO guion) y el «respeta el texto pegado», porque un
+    # short necesita su propio guion aunque el largo fuera pegado tal cual.
+    guion = destino.estado.params("guion") or {}
+    previas = str(guion.get("prompt_general") or "").strip()
+    nota = INSTRUCCIONES_SHORT.format(segundos=segundos)
+    destino.estado.actualizar_params("guion", {
+        "prompt_general": f"{previas}\n\n{nota}" if previas else nota,
+        "bloques": {},
+        "guion_propio": False,
+    })
+    destino.bitacora.anotar("short_creado", None,
+                            {"de": ctx.id, "segundos": segundos})
+    return {"proyecto": ficha_proyecto(destino), "copia_de": ctx.id,
+            "segundos": segundos,
+            "pasos": [ficha_paso(destino, p["id"]) for p in PASOS]}
+
+
 # -------------------------------------------------------------- la papelera
 # Un proyecto es el trabajo de varias horas y varios euros de generacion. No se
 # borra: se aparta. La carpeta se mueve a proyectos/_papelera/, que no aparece en
