@@ -1009,6 +1009,13 @@ def hacer_short(pid: str, cuerpo: dict = Body(default=None)):
         "tolerancia": TOLERANCIA_SHORT,
     })
     destino.proyecto.config[CONFIG_SHORT_DE] = ctx.id
+    # `duplicar` no copia la config del modo light, y sin `video_light` la
+    # portada no ensena el proyecto en ninguna lista: el primer short existia y
+    # no habia forma de llegar a el (30-09-2026). Se hereda del original, que
+    # es de donde sale todo lo demas.
+    for clave in (CONFIG_VIDEO_LIGHT, CONFIG_ESTILO_LIGHT):
+        if clave in ctx.proyecto.config:
+            destino.proyecto.config[clave] = ctx.proyecto.config[clave]
     destino.proyecto.guardar_config()
     # EL GUION: la nota de short va a las indicaciones del video
     # (`prompt_general`), detras de las que ya hubiera. Y se sueltan las dos
