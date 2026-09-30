@@ -55,8 +55,8 @@ igual("junto a tarifas.json (datos/), no junto al codigo",
 
 print("\n== sin apuntar nada ==")
 vacio = COSTE.saldo()
-comprobar("las tres cuentas salen, sin apuntar",
-          sorted(vacio["cuentas"]) == ["openai", "tts", "veo"]
+comprobar("las cuatro cuentas salen, sin apuntar",
+          sorted(vacio["cuentas"]) == ["fal", "openai", "tts", "veo"]
           and not any(c["apuntado"] for c in vacio["cuentas"].values()), vacio)
 igual("y no hay ninguna baja", vacio["bajos"], [])
 comprobar("cada una con su enlace de recarga",

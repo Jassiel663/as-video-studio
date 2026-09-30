@@ -111,6 +111,8 @@ def _vacio():
         # Google (Gemini API), para animar con Veo los planos sin texto. Es
         # opcional: sin ella el render hace lo de siempre, imagen y zoom.
         "google": {"clave": ""},
+        # fal.ai: el respaldo de Veo cuando Google se queda sin cuota
+        "fal": {"clave": ""},
         "claude_cli": {"cuentas": []},
     }
 
@@ -159,7 +161,7 @@ def _normalizar(datos):
     elif isinstance(cartesia, str):
         base["cartesia"]["clave"] = cartesia.strip()
 
-    for suelta in ("jamendo", "freesound", "google"):
+    for suelta in ("jamendo", "freesound", "google", "fal"):
         cruda = datos.get(suelta)
         if isinstance(cruda, dict):
             base[suelta]["clave"] = str(cruda.get("clave") or "").strip()
@@ -247,6 +249,7 @@ def adoptar_env():
     datos["jamendo"]["clave"] = valores.get("JAMENDO_CLIENT_ID", "") or ""
     datos["freesound"]["clave"] = valores.get("FREESOUND_API_KEY", "") or ""
     datos["google"]["clave"] = valores.get("GEMINI_API_KEY", "") or ""
+    datos["fal"]["clave"] = valores.get("FAL_KEY", "") or ""
     return datos
 
 
@@ -333,7 +336,7 @@ def _fusionar(actual, peticion):
     # es la que ya habia. Sin eso, editar la de Jamendo borraria la de Cartesia,
     # porque la clave de verdad no baja al navegador NUNCA y la pantalla manda
     # el centinela en su lugar.
-    for suelta in ("cartesia", "jamendo", "freesound", "google"):
+    for suelta in ("cartesia", "jamendo", "freesound", "google", "fal"):
         if suelta in peticion:
             ficha = peticion.get(suelta)
             clave = ficha.get("clave") if isinstance(ficha, dict) else ficha
@@ -479,12 +482,14 @@ def espejar_env(datos=None):
         nuestras["FREESOUND_API_KEY"] = datos["freesound"]["clave"]
     if datos["google"]["clave"]:
         nuestras["GEMINI_API_KEY"] = datos["google"]["clave"]
+    if datos["fal"]["clave"]:
+        nuestras["FAL_KEY"] = datos["fal"]["clave"]
 
     # Los nombres que ESTA pantalla escribe. Lo que no este aqui se conserva tal
     # cual y en su orden: un .env puede tener cosas que nadie de aqui gestiona.
     gestionadas = {"OPENAI_API_KEY", "CARTESIA_API_KEY",
                    "JAMENDO_CLIENT_ID", "FREESOUND_API_KEY",
-                   "GEMINI_API_KEY"} | {
+                   "GEMINI_API_KEY", "FAL_KEY"} | {
         f"OPENAI_API_KEY_{i}" for i in range(2, MAX_OPENAI + 1)}
 
     lineas, puestas = [], set()
@@ -561,6 +566,10 @@ def resumen(datos=None):
             "puesta": bool(datos["google"]["clave"]),
             "cola": tapar(datos["google"]["clave"]),
         },
+        "fal": {
+            "puesta": bool(datos["fal"]["clave"]),
+            "cola": tapar(datos["fal"]["clave"]),
+        },
         "fichero": FICHERO,
         "max_openai": MAX_OPENAI,
     }
@@ -629,3 +638,8 @@ def cartesia():
 def google():
     """La clave de la Gemini API (Veo) guardada aqui, si la hay."""
     return leer()["google"]["clave"] or ""
+
+
+def fal():
+    """La clave de fal.ai (respaldo de Veo) guardada aqui, si la hay."""
+    return leer()["fal"]["clave"] or ""

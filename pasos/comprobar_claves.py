@@ -12,6 +12,7 @@ Aqui cada proveedor tiene su prueba, elegida para que NO cueste dinero:
     jamendo    GET /tracks/?limit=1        una busqueda; el plan es gratuito
     freesound  GET /search/text/?page_size=1   idem
     google     GET /v1beta/models          lista modelos y mira que este Veo
+    fal        GET status de un trabajo que no existe: 404 = clave buena
     claude     salud_cli.probar por cuenta  (haiku, una palabra: es lo minimo)
 
 LO QUE NO PUEDE DECIR, y se dice tal cual: que OpenAI tenga SALDO. La unica
@@ -203,6 +204,28 @@ def probar_google(clave):
                                    f"{_texto_corto(respuesta)}")
 
 
+def probar_fal(clave):
+    if not clave:
+        return _ficha("fal", "sin_clave", "no hay clave de fal.ai: cuando Google se "
+                                          "quede sin cuota, los planos saldran con zoom")
+    # fal no tiene una ruta para comprobar la clave. Se pregunta por un trabajo
+    # que no existe: con clave buena contesta 404, con clave mala 401.
+    respuesta, fallo = _pedir(
+        "GET", "https://queue.fal.run/fal-ai/kling-video/requests/"
+               "00000000-0000-0000-0000-000000000000/status",
+        headers={"Authorization": f"Key {clave}"})
+    if respuesta is None:
+        return _ficha("fal", "sin_red", f"no se ha podido hablar con fal.ai: {fallo}")
+    if respuesta.status_code == 404:
+        return _ficha("fal", "ok", "la clave autentica. El saldo se mira en "
+                                   "fal.ai › Billing")
+    if respuesta.status_code in (401, 403):
+        return _ficha("fal", "mal", "fal.ai no reconoce la clave: tiene que ser la "
+                                    "clave entera, con la forma «id:secreto»")
+    return _ficha("fal", "mal", f"fal.ai contesta {respuesta.status_code}: "
+                                f"{_texto_corto(respuesta)}")
+
+
 def probar_claude(cuentas):
     """Una ficha por cuenta del CLI con sesion, con lo que apunta salud_cli."""
     fichas = []
@@ -233,7 +256,8 @@ def probar_todas(cuentas_claude=(), con_claude=True):
                                   ("cartesia", bool(almacen["cartesia"]["clave"])),
                                   ("jamendo", bool(almacen["jamendo"]["clave"])),
                                   ("freesound", bool(almacen["freesound"]["clave"])),
-                                  ("google", bool(almacen["google"]["clave"]))):
+                                  ("google", bool(almacen["google"]["clave"])),
+                                  ("fal", bool(almacen["fal"]["clave"]))):
             fichas.append(_ficha(proveedor, "ok" if puesta else "sin_clave",
                                  "simulado" if puesta else "sin poner"))
         if con_claude:
@@ -245,6 +269,7 @@ def probar_todas(cuentas_claude=(), con_claude=True):
         (probar_jamendo, almacen["jamendo"]["clave"]),
         (probar_freesound, almacen["freesound"]["clave"]),
         (probar_google, almacen["google"]["clave"]),
+        (probar_fal, almacen["fal"]["clave"]),
     )
     for funcion, clave in pruebas:
         try:
@@ -264,7 +289,8 @@ def probar_todas(cuentas_claude=(), con_claude=True):
 
 NOMBRES = {"openai": "OpenAI (imágenes)", "cartesia": "Cartesia (voz)",
            "jamendo": "Jamendo (música)", "freesound": "FreeSound (efectos)",
-           "google": "Google Veo (vídeo)", "claude": "Claude"}
+           "google": "Google Veo (vídeo)", "fal": "fal.ai (vídeo de respaldo)",
+           "claude": "Claude"}
 
 
 def resumen_texto(fichas):

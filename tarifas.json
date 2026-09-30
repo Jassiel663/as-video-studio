@@ -45,6 +45,14 @@
       "nota": "Precios oficiales de la Gemini API (ai.google.dev/gemini-api/docs/pricing, 29-09-2026), audio incluido. Se paga el clip ENTERO que devuelve Veo (4, 6 u 8 s), no lo que dura el plano: un plano de 2,6 s se paga como 4."
     }
   },
+  "fal": {
+    "proveedor": "fal.ai",
+    "usd_por_segundo": {
+      "fal-ai/kling-video/v2.6/pro/image-to-video": 0.07,
+      "fal-ai/veo3.1/fast/image-to-video": 0.1,
+      "nota": "Sin audio (el estudio pone su voz y su musica). Kling 2.6 Pro y Veo 3.1 Fast por fal.ai, precios publicados en septiembre de 2026. Se paga el clip entero: Kling da 5 o 10 s, Veo 4, 6 u 8."
+    }
+  },
   "claude_cli": {
     "suma_al_total": false,
     "nota": "Va contra la suscripcion, no contra un contador con precio por llamada: se miden tokens y nunca dolares."

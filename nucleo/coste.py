@@ -66,10 +66,10 @@ RUTA_GLOBAL = (os.environ.get("ESTUDIO_COSTE_GLOBAL")
                or os.path.join(RAIZ_ESTUDIO, "coste_global.jsonl"))
 NOMBRE_COSTE = "coste.jsonl"
 
-PROVEEDORES = ("openai", "tts", "claude_cli", "veo")
+PROVEEDORES = ("openai", "tts", "claude_cli", "veo", "fal")
 SIN_DOLARES = ("claude_cli",)            # se miden en tokens y no suman al total
 ETIQUETAS = {"openai": "OpenAI", "tts": "TTS", "claude_cli": "Claude",
-             "veo": "Veo"}
+             "veo": "Veo", "fal": "fal.ai"}
 
 AVISO_PRESUPUESTO = 0.8                  # fraccion a partir de la cual se avisa
 
@@ -154,6 +154,12 @@ def tarifa_veo(modelo, resolucion="720p"):
     """Dolares por segundo de video de ese modelo de Veo, o None si no hay."""
     tabla = (tarifas().get("veo") or {}).get("usd_por_segundo") or {}
     return _numero((tabla.get(modelo) or {}).get(resolucion))
+
+
+def tarifa_fal(modelo):
+    """Dolares por segundo de un modelo de fal.ai, o None si no hay."""
+    tabla = (tarifas().get("fal") or {}).get("usd_por_segundo") or {}
+    return _numero(tabla.get(modelo))
 
 
 def tarifa_caracter():
@@ -445,6 +451,9 @@ def cabecera(proveedores, total_usd):
     # tocan, y una columna a cero en cada cabecera no dice nada.
     if video["eventos"]:
         partes.append(f"Veo  {importe(video)} · {video['eventos']} clips")
+    respaldo = proveedores.get("fal") or _vacio("fal")
+    if respaldo["eventos"]:
+        partes.append(f"fal  {importe(respaldo)} · {respaldo['eventos']} clips")
     partes.append(f"TOTAL  ${total_usd:.2f}")
     return "     ".join(partes)
 
@@ -517,6 +526,8 @@ CUENTAS_SALDO = {
                "recarga": "https://platform.openai.com/settings/organization/billing"},
     "veo": {"etiqueta": "Google Veo — vídeo",
             "recarga": "https://aistudio.google.com/"},
+    "fal": {"etiqueta": "fal.ai — vídeo de respaldo",
+            "recarga": "https://fal.ai/dashboard/billing"},
     "tts": {"etiqueta": "Cartesia — voz",
             "recarga": "https://play.cartesia.ai/"},
 }
@@ -727,6 +738,17 @@ def reportar_veo(segundos, modelo, resolucion="720p", operacion="animar",
              "segundos": round(segundos, 2)}
     ficha.update(detalle or {})
     return _anotar("veo", operacion, unidad=unidad,
+                   usd=None if precio is None else precio * segundos,
+                   usd_estimado=True, detalle=ficha)
+
+
+def reportar_fal(segundos, modelo, operacion="animar", unidad=None, detalle=None):
+    """Anota un clip de fal.ai por los segundos PAGADOS (el clip entero)."""
+    segundos = float(segundos or 0)
+    precio = tarifa_fal(modelo)
+    ficha = {"modelo": modelo, "segundos": round(segundos, 2)}
+    ficha.update(detalle or {})
+    return _anotar("fal", operacion, unidad=unidad,
                    usd=None if precio is None else precio * segundos,
                    usd_estimado=True, detalle=ficha)
 

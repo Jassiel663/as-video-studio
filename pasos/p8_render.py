@@ -1146,41 +1146,53 @@ def _animar_tareas(candidatos, proyecto, modo, ancho, alto, trabajo, avisar):
     if not candidatos:
         return []
     veo = medios.motor("video_veo/veo.py")
-    if not veo.clave():
+    fal = medios.motor("video_fal/fal.py")
+    if not veo.clave() and not fal.clave():
         return [f"{len(candidatos)} plano(s) sin texto se podían animar con Veo, "
-                f"pero no hay clave de Google: ponla en Configuración › Claves. "
-                f"Han salido con imagen y zoom, como siempre."]
+                f"pero no hay clave de Google ni de fal.ai: ponlas en Configuración "
+                f"› Claves. Han salido con imagen y zoom, como siempre."]
     contexto = COSTE.contexto_actual()
-    hechos = {"pagados": 0, "cache": 0, "listos": 0}
+    hechos = {"veo": 0, "fal": 0, "cache": 0, "listos": 0}
     candado = threading.Lock()
     fallos, sin_cuota = [], []
-    # SIN CUOTA, NO SE PIDE MAS. En cuanto un clip dice que la cuenta se ha
-    # quedado sin cuota, los demas solo miran el cache: pedir los que faltan
-    # seria fallar igual, y con reintentos de minutos cada uno.
-    agotada = threading.Event()
+    # SIN CUOTA, NO SE PIDE MAS. En cuanto Google dice que se ha quedado sin
+    # cuota, los demas planos no se lo vuelven a preguntar: pasan directos al
+    # respaldo de fal.ai. Y si fal tampoco puede (sin saldo o sin clave), solo
+    # se mira lo guardado: pedir seria fallar igual, con reintentos cada vez.
+    google_fuera = threading.Event()
+    if not veo.clave():
+        google_fuera.set()
+    nadie = threading.Event()
 
     def uno(tarea, escena, hyper, mov):
         def pedir():
             try:
-                return animar.clip(proyecto, escena, hyper, ancho, alto, modo,
-                                   ventana=mov.get("ventana_ini"),
-                                   solo_cache=agotada.is_set())
+                ruta, pagado, info = animar.clip(
+                    proyecto, escena, hyper, ancho, alto, modo,
+                    ventana=mov.get("ventana_ini"),
+                    solo_cache=google_fuera.is_set() or nadie.is_set(),
+                    primero=bool(tarea.get("primero")),
+                    usar_respaldo=not nadie.is_set())
             except veo.CuotaAgotada:
-                agotada.set()
+                google_fuera.set()
+                nadie.set()
                 raise
+            if info.get("google_agotado"):
+                google_fuera.set()
+            return ruta, pagado, info
         # el hilo no hereda la pila de contexto del medidor: se la pone igual
         # que la del render, o el gasto se anotaria sin proyecto
         if contexto is not None:
             with COSTE.contexto(contexto.medidor, contexto.paso):
-                ruta, pagado = pedir()
+                ruta, pagado, info = pedir()
         else:
-            ruta, pagado = pedir()
+            ruta, pagado, info = pedir()
         segundos = float(escena["t_out"]) - float(escena["t_in"])
         rutas, fps_clip = animar.fotogramas(
             ruta, os.path.join(trabajo, "animados", tarea["id"]), ancho, alto,
             segundos)
         with candado:
-            hechos["pagados" if pagado else "cache"] += 1
+            hechos[info["proveedor"] if pagado else "cache"] += 1
             hechos["listos"] += 1
             avisar(0.02 + 0.03 * hechos["listos"] / len(candidatos),
                    f"animando con Veo: {hechos['listos']} de {len(candidatos)}")
@@ -1208,17 +1220,20 @@ def _animar_tareas(candidatos, proyecto, modo, ancho, alto, trabajo, avisar):
 
     avisos = []
     if hechos["listos"]:
-        avisos.append(f"{hechos['listos']} plano(s) animados con Veo ({modo}): "
-                      f"{hechos['pagados']} generados ahora, {hechos['cache']} "
-                      f"reutilizados sin volver a pagar.")
+        avisos.append(f"{hechos['listos']} plano(s) animados: {hechos['veo']} con "
+                      f"Google Veo ({modo}), {hechos['fal']} con fal.ai de respaldo "
+                      f"y {hechos['cache']} reutilizados sin volver a pagar.")
+    if hechos["fal"]:
+        avisos.append("Google Veo se quedó sin cuota a mitad: el resto se animó con "
+                      "fal.ai (Veo Fast en el primer plano y los que llevan texto, "
+                      "Kling en los demás).")
     if sin_cuota:
-        avisos.append(f"{len(sin_cuota)} plano(s) sin animar porque la cuenta de "
-                      f"Google se ha quedado sin cuota de Veo ({', '.join(sin_cuota[:6])}"
+        avisos.append(f"{len(sin_cuota)} plano(s) sin animar ({', '.join(sin_cuota[:6])}"
                       + (f" y {len(sin_cuota) - 6} más" if len(sin_cuota) > 6 else "")
-                      + "): han salido con imagen y zoom. No se ha cobrado nada por "
-                        "ellos. La cuota se renueva sola (se ve en aistudio.google.com "
-                        "› Rate limit); al volver a montar se animan los que faltan y "
-                        "los ya hechos no se vuelven a pagar.")
+                      + "): Google Veo se quedó sin cuota y fal.ai no pudo tomar el "
+                        "relevo (sin clave o sin saldo). Han salido con imagen y "
+                        "zoom, sin cobrarse. Al volver a montar se animan los que "
+                        "faltan y los ya hechos no se vuelven a pagar.")
     if fallos:
         avisos.append(f"{len(fallos)} plano(s) no se pudieron animar y han salido "
                       f"con imagen y zoom: " + "; ".join(fallos[:4])
@@ -1397,6 +1412,7 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
         # el primer plano es el gancho: se anima aunque lleve texto
         if modo_veo and animar.motivo_para_no_animar(
                 escena, svg, primero=indice == 0) is None:
+            tareas[-1]["primero"] = indice == 0
             candidatos_veo.append((tareas[-1], escena, hyper, mov))
 
     # QUIEN TIENE QUE ESPERAR A QUIEN. La transicion de un plano se cuece sobre

@@ -219,45 +219,93 @@ def carpeta_de(proyecto):
     return os.path.join(raiz, "video_ia")
 
 
-def clip(proyecto, escena, hyper, ancho, alto, modo, ventana=None, avisar=None,
-         solo_cache=False):
-    """El clip de Veo de este plano, del cache o recien pagado. -> (ruta, pagado)
+def modelo_de_respaldo(escena, primero=False):
+    """Que modelo de fal.ai anima este plano si Google no puede.
 
-    Con `solo_cache` no se pide nada a Veo: si el clip no estaba guardado se
-    levanta CuotaAgotada. Es lo que se usa cuando la cuenta ya se ha quedado
-    sin cuota en este mismo montaje: lo guardado no gasta cuota y sigue valiendo.
+    Veo Fast para el primero y cualquiera con texto: es el que lo respeta. Kling
+    para el resto: mas barato y con mas movimiento, pero en la prueba del
+    30-09-2026 saco del cuadro el movil con la cifra. """
+    return "veofast" if (primero or lleva_texto(escena)) else "kling"
+
+
+def _huella(entrada, *trozos):
+    with open(entrada, "rb") as fh:
+        huella = hashlib.sha1(fh.read())
+    for trozo in trozos:
+        huella.update(b"\0" + str(trozo).encode("utf-8"))
+    return huella.hexdigest()[:16]
+
+
+def _guardar(destino, mp4):
+    temporal = destino + ".parcial"
+    with open(temporal, "wb") as fh:
+        fh.write(mp4)
+    os.replace(temporal, destino)
+
+
+def clip(proyecto, escena, hyper, ancho, alto, modo, ventana=None, avisar=None,
+         solo_cache=False, primero=False, usar_respaldo=True):
+    """El clip animado de este plano. -> (ruta, pagado, info)
+
+    En orden: lo GUARDADO (de Google o de fal, no se vuelve a pagar); GOOGLE VEO
+    en el modo pedido; y si Google no puede --sin cuota o sin clave-- FAL.AI
+    (ver `modelo_de_respaldo`). `info` dice quien lo hizo y si Google se ha
+    quedado sin cuota en esta llamada, para que el render no se lo vuelva a
+    pedir.
+
+    `solo_cache` es «Google ya dijo que no en este montaje»: no se le pregunta.
+    `usar_respaldo` en False es «fal tampoco puede». Sin nadie que pueda y sin
+    clip guardado se levanta CuotaAgotada y el plano sale con imagen y zoom.
     """
     veo = medios.motor("video_veo/veo.py")
+    fal = medios.motor("video_fal/fal.py")
     duracion = float(escena["t_out"]) - float(escena["t_in"])
     segundos, resolucion = veo.duracion_de_clip(duracion)
     carpeta = carpeta_de(proyecto)
     entrada = os.path.join(carpeta, "entradas", f"{escena['id']}.png")
     preparar_imagen(hyper, entrada, ancho, alto, ventana=ventana)
     prompt = prompt_de(escena)
-    with open(entrada, "rb") as fh:
-        huella = hashlib.sha1(fh.read())
     negativo = negativo_de(escena)
-    for trozo in (prompt, negativo, veo.MODELOS[modo], str(segundos), resolucion,
-                  str(VERSION)):
-        huella.update(b"\0" + trozo.encode("utf-8"))
-    destino = os.path.join(carpeta, f"{escena['id']}_{huella.hexdigest()[:16]}.mp4")
-    if os.path.exists(destino) and os.path.getsize(destino) > 0:
-        return destino, False
-    if solo_cache:
-        raise veo.CuotaAgotada("sin cuota de Veo en este montaje y el clip no "
-                               "estaba guardado")
-    mp4, meta = veo.generar(entrada, prompt, modo=modo, segundos=segundos,
-                            resolucion=resolucion,
-                            aspecto="9:16" if alto > ancho else "16:9",
-                            negativo=negativo, avisar=avisar)
-    temporal = destino + ".parcial"
-    with open(temporal, "wb") as fh:
-        fh.write(mp4)
-    os.replace(temporal, destino)
-    COSTE.reportar_veo(meta["segundos"], meta["modelo"], meta["resolucion"],
-                       unidad=f"escena:{escena['id']}",
-                       detalle={"tardo_s": meta.get("tardo_s")})
-    return destino, True
+    aspecto = "9:16" if alto > ancho else "16:9"
+    info = {"proveedor": "veo", "google_agotado": False}
+
+    # LA HUELLA DE GOOGLE ES LA DE SIEMPRE: los clips ya pagados siguen valiendo
+    destino = os.path.join(carpeta, "%s_%s.mp4" % (escena["id"], _huella(
+        entrada, prompt, negativo, veo.MODELOS[modo], segundos, resolucion, VERSION)))
+    respaldo = modelo_de_respaldo(escena, primero)
+    segundos_fal = fal.duracion_de_clip(respaldo, duracion)
+    destino_fal = os.path.join(carpeta, "%s_fal_%s.mp4" % (escena["id"], _huella(
+        entrada, prompt, negativo, fal.MODELOS[respaldo], segundos_fal, aspecto,
+        VERSION)))
+    for guardado, quien in ((destino, "veo"), (destino_fal, "fal")):
+        if os.path.exists(guardado) and os.path.getsize(guardado) > 0:
+            return guardado, False, dict(info, proveedor=quien)
+
+    if not solo_cache:
+        try:
+            mp4, meta = veo.generar(entrada, prompt, modo=modo, segundos=segundos,
+                                    resolucion=resolucion, aspecto=aspecto,
+                                    negativo=negativo, avisar=avisar)
+            _guardar(destino, mp4)
+            COSTE.reportar_veo(meta["segundos"], meta["modelo"], meta["resolucion"],
+                               unidad=f"escena:{escena['id']}",
+                               detalle={"tardo_s": meta.get("tardo_s")})
+            return destino, True, info
+        except (veo.CuotaAgotada, veo.SinClave):
+            info["google_agotado"] = True
+
+    if not usar_respaldo or not segundos_fal or not fal.clave():
+        raise veo.CuotaAgotada("Google Veo sin cuota y sin respaldo de fal.ai "
+                               "para este plano")
+    try:
+        mp4, meta = fal.generar(entrada, prompt, modelo=respaldo, segundos=segundos_fal,
+                                aspecto=aspecto, negativo=negativo, avisar=avisar)
+    except (fal.SinSaldo, fal.SinClave) as fallo:
+        raise veo.CuotaAgotada(f"Google Veo sin cuota y fal.ai tampoco puede: {fallo}")
+    _guardar(destino_fal, mp4)
+    COSTE.reportar_fal(meta["segundos"], meta["modelo"], unidad=f"escena:{escena['id']}",
+                       detalle={"tardo_s": meta.get("tardo_s"), "respaldo_de": "veo"})
+    return destino_fal, True, dict(info, proveedor="fal", modelo=respaldo)
 
 
 def fotogramas(clip_mp4, carpeta, ancho, alto, segundos):

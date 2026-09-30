@@ -2738,7 +2738,8 @@ async function probarCuentaCLI(cid) {
    tarjeta de la guía. */
 const NOMBRES_PROVEEDOR = {
   openai: 'OpenAI — imágenes', cartesia: 'Cartesia — voz', jamendo: 'Jamendo — música',
-  freesound: 'FreeSound — efectos', google: 'Google Veo — vídeo', claude: 'Claude',
+  freesound: 'FreeSound — efectos', google: 'Google Veo — vídeo',
+  fal: 'fal.ai — vídeo de respaldo', claude: 'Claude',
 };
 
 function bloquePruebaClaves() {
@@ -2976,6 +2977,11 @@ function seccionOtrasClaves(ficha) {
     + 'en la tarjeta del montaje; sin clave los planos salen con imagen y zoom.'));
   fila(['google', 'Google Veo — vídeo', 'la API key de aistudio.google.com/apikey '
     + '(con la facturación activada: Veo no está en el plan gratuito)']);
+  // EL RESPALDO: cuando Google se queda sin cuota de Veo (le pasa a las cuentas
+  // nuevas cada día), los planos que faltan se animan por fal.ai
+  fila(['fal', 'fal.ai — vídeo de respaldo', 'la clave de fal.ai/dashboard/keys (la '
+    + 'entera, con la forma «id:secreto»). Se usa sola cuando Google se queda sin '
+    + 'cuota: Veo Fast en el primer plano y los que llevan texto, Kling en el resto.']);
   return caja;
 }
 
@@ -7206,6 +7212,11 @@ function costeLightAhora() {
   if (video.eventos) {
     caja.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Veo'),
       importeCoste(video, true)));
+  }
+  const respaldo = proveedorDe(datos, 'fal');
+  if (respaldo.eventos) {
+    caja.appendChild(h('span', { clase: 'prov', title: 'clips de respaldo por fal.ai' },
+      h('b', {}, 'fal'), importeCoste(respaldo, true)));
   }
   caja.appendChild(h('span', { clase: 'prov total' }, h('b', {}, 'Total'),
     h('span', { clase: 'usd' }, `$${Number(datos.total_usd || 0).toFixed(2)}`)));

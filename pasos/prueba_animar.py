@@ -28,6 +28,7 @@ TEMPORAL = tempfile.mkdtemp(prefix="prueba_animar_")
 os.environ["ESTUDIO_SECRETOS"] = os.path.join(TEMPORAL, "secretos")
 os.environ["ESTUDIO_COSTE_GLOBAL"] = os.path.join(TEMPORAL, "coste_global.jsonl")
 os.environ.pop("GEMINI_API_KEY", None)
+os.environ.pop("FAL_KEY", None)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -188,12 +189,12 @@ else:
         raiz = os.path.join(TEMPORAL, "proyecto")
 
     try:
-        ruta, pagado = animar.clip(Proyecto, escena(), origen, 1920, 1080, "fast")
+        ruta, pagado, _ = animar.clip(Proyecto, escena(), origen, 1920, 1080, "fast")
         comprobar("la primera vez se paga", pagado and os.path.exists(ruta))
         igual("y se pide de 4 s a 720p", (llamadas[-1]["segundos"],
                                           llamadas[-1]["resolucion"]), (4, "720p"))
         igual("y se anota el gasto una vez", len(pagos), 1)
-        ruta2, pagado2 = animar.clip(Proyecto, escena(), origen, 1920, 1080, "fast")
+        ruta2, pagado2, _ = animar.clip(Proyecto, escena(), origen, 1920, 1080, "fast")
         comprobar("la segunda sale del cache, sin pagar", not pagado2 and ruta2 == ruta)
         igual("sin llamar a Veo otra vez", len(llamadas), 1)
         animar.clip(Proyecto, escena(), origen, 1920, 1080, "lite")
@@ -272,7 +273,70 @@ else:
                   "fotogramas" not in t1 and "fotogramas" not in t3)
         texto = " ".join(avisos)
         comprobar("y el aviso dice que es la cuota, y que no se ha cobrado",
-                  "sin cuota de Veo" in texto and "No se ha cobrado" in texto, avisos)
+                  "sin cuota" in texto and "sin cobrarse" in texto, avisos)
+
+        print("\n== el respaldo de fal.ai: Google sin cuota, fal toma el relevo ==")
+        fal = medios.motor("video_fal/fal.py")
+        original_fal = fal.generar
+        original_reportar_fal = animar.COSTE.reportar_fal
+        modelos_fal, pagos_fal = [], []
+
+        def doble_fal(imagen, prompt, **kw):
+            modelos_fal.append(kw["modelo"])
+            return BYTES, {"modelo": fal.MODELOS[kw["modelo"]], "corto": kw["modelo"],
+                           "segundos": kw["segundos"]}
+        fal.generar = doble_fal
+        animar.COSTE.reportar_fal = lambda *a, **k: pagos_fal.append((a, k))
+        os.environ["FAL_KEY"] = "id:de-mentira"
+        pedidas.clear()
+        gancho = escena("S030", direccion='A sign reading "OPEN" swings.')
+        tp = {"id": "S030", "hyper": origen, "mov": dict(mov), "primero": True}
+        tk = {"id": "S031", "hyper": origen, "mov": dict(mov)}
+        p8_render.VEO_A_LA_VEZ = 1
+        try:
+            avisos = p8_render._animar_tareas(
+                [(tp, gancho, origen, mov),
+                 (tk, escena("S031", direccion="A calm lake at dusk."), origen, mov)],
+                Proyecto, "fast", 640, 360, os.path.join(TEMPORAL, "trabajo"),
+                lambda *a: None)
+        finally:
+            p8_render.VEO_A_LA_VEZ = antes
+        igual("a Google se le pregunta una vez y luego ya no", len(pedidas), 1)
+        comprobar("los dos planos se animan igual", bool(tp.get("fotogramas"))
+                  and bool(tk.get("fotogramas")))
+        igual("el primero con texto va con Veo Fast, el otro con Kling",
+              modelos_fal, ["veofast", "kling"])
+        igual("y se anotan los dos gastos en fal", len(pagos_fal), 2)
+        comprobar("y el aviso dice que tomo el relevo fal.ai",
+                  "fal.ai" in " ".join(avisos), avisos)
+        igual("Kling pide su clip de 5 s (no hay de 4)",
+              fal.duracion_de_clip("kling", 2.6), 5)
+        igual("y de 10 para un plano de 7", fal.duracion_de_clip("kling", 7.0), 10)
+
+        modelos_fal.clear()
+
+        def fal_sin_saldo(*a, **k):
+            modelos_fal.append(1)
+            raise fal.SinSaldo("la cuenta de fal.ai no tiene saldo")
+        fal.generar = fal_sin_saldo
+        u1 = {"id": "S040", "hyper": origen, "mov": dict(mov)}
+        u2 = {"id": "S041", "hyper": origen, "mov": dict(mov)}
+        p8_render.VEO_A_LA_VEZ = 1
+        try:
+            avisos = p8_render._animar_tareas(
+                [(u1, escena("S040", direccion="A red barn."), origen, mov),
+                 (u2, escena("S041", direccion="A blue boat."), origen, mov)],
+                Proyecto, "fast", 640, 360, os.path.join(TEMPORAL, "trabajo"),
+                lambda *a: None)
+        finally:
+            p8_render.VEO_A_LA_VEZ = antes
+            fal.generar = original_fal
+            animar.COSTE.reportar_fal = original_reportar_fal
+            os.environ.pop("FAL_KEY", None)
+        igual("fal sin saldo: se le pide UNA vez y no mas", len(modelos_fal), 1)
+        comprobar("y los planos quedan quietos, avisado",
+                  "fotogramas" not in u1 and "fotogramas" not in u2
+                  and "sin cobrarse" in " ".join(avisos), avisos)
 
         print("\n== leer el 429 de Google ==")
 
