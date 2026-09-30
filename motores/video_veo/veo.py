@@ -137,8 +137,12 @@ def generar(imagen, prompt, *, modo="fast", segundos=4, resolucion="720p",
                   "resolution": resolucion,
                   # con imagen de entrada es el unico valor que admite la API
                   "personGeneration": "allow_adult"}
+    # LO QUE NO SE QUIERE VA DENTRO DEL PROMPT, no en `negativePrompt`. Fast
+    # acepta el parametro y Lite lo rechaza con un 400 («negativePrompt isn't
+    # supported by this model», 30-09-2026): con el parametro, el mismo render
+    # animaba en un modo y en el otro dejaba todos los planos quietos.
     if negativo:
-        parametros["negativePrompt"] = negativo
+        prompt = f"{prompt} Avoid: {negativo}."
     cuerpo = {"instances": [{"prompt": prompt,
                              "image": {"bytesBase64Encoded": datos,
                                        "mimeType": "image/png"}}],
