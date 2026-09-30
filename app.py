@@ -2286,6 +2286,13 @@ def leer_coste(pid: str):
     ctx = contexto(pid)
     ficha = medidor(ctx).total()
     ficha["instrumentacion"] = COSTE.informe_instrumentacion()
+    # las cuentas por debajo de su aviso viajan con el coste del video, que es
+    # lo que la cabecera ya pregunta: asi el aviso sale sin un sondeo aparte
+    try:
+        ficha["saldo_bajo"] = [COSTE.CUENTAS_SALDO[p]["etiqueta"]
+                               for p in COSTE.saldo()["bajos"]]
+    except Exception:                                       # noqa: BLE001
+        ficha["saldo_bajo"] = []
     return ficha
 
 
@@ -2388,6 +2395,32 @@ def escribir_tarifas(cuerpo: dict = Body(default=None)):
     except (TypeError, OSError) as fallo:
         raise ErrorApi(400, f"no se han podido guardar las tarifas: {fallo}")
     return {"tarifas": tabla, "usd_por_caracter": COSTE.tarifa_caracter()}
+
+
+@app.get("/api/saldo")
+def leer_saldo():
+    """Lo que queda en cada cuenta: lo apuntado menos lo gastado desde entonces."""
+    return COSTE.saldo()
+
+
+@app.put("/api/saldo")
+def apuntar_saldo(cuerpo: dict = Body(default=None)):
+    """Apunta lo cargado en una o varias cuentas: {"openai": {"cargado", "minimo"}}.
+
+    `cargado: null` deja de seguir esa cuenta.
+    """
+    datos = _cuerpo(cuerpo)
+    if not datos:
+        raise ErrorApi(400, "no hay ninguna cuenta que apuntar")
+    resultado = None
+    for proveedor, ficha in datos.items():
+        ficha = ficha if isinstance(ficha, dict) else {"cargado": ficha}
+        try:
+            resultado = COSTE.fijar_saldo(proveedor, ficha.get("cargado"),
+                                          ficha.get("minimo"))
+        except ValueError as fallo:
+            raise ErrorApi(400, str(fallo))
+    return resultado
 
 
 # -------------------------------------------------------- ajustes del CLI

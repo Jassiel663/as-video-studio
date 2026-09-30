@@ -385,6 +385,7 @@ const API = {
     + `/capturas/contexto?${consulta}`,
   ajustesCLI: () => `${BASE}/api/ajustes-cli`,
   claves: () => `${BASE}/api/claves`,
+  saldo: () => `${BASE}/api/saldo`,
   ajustes: () => `${BASE}/api/ajustes`,
   cuentasCLI: refrescar => `${BASE}/api/claves/cli${refrescar ? '?refrescar=1' : ''}`,
   entrarCLI: cid => `${BASE}/api/claves/cli/${encodeURIComponent(cid)}/entrar`,
@@ -2188,6 +2189,8 @@ function conmutarConfig(abrir) {
   const cajon = $('#config');
   const quiero = abrir === undefined ? cajon.classList.contains('plegado') : !!abrir;
   cajon.classList.toggle('plegado', !quiero);
+  // el saldo se vuelve a leer al abrir: entre dos visitas se ha podido gastar
+  if (quiero) estadoConfig().saldo = undefined;
   if (quiero) cargarClaves().then(repintarClaves);
   /* Al cerrar el cajón se para el latido: un sondeo que sigue corriendo detrás
      de una pantalla que nadie mira es una llamada por segundo para siempre. */
@@ -2276,6 +2279,7 @@ function pintarConfig() {
     return;
   }
   caja.appendChild(bloquePruebaClaves());
+  caja.appendChild(seccionSaldo());
   caja.appendChild(seccionOpenAI(ficha));
   caja.appendChild(seccionCalidadImagen());
   caja.appendChild(seccionCartesia(ficha));
@@ -2291,6 +2295,84 @@ function pintarConfig() {
     `Se guardan en ${ficha.fichero}, fuera del repositorio. No hace falta `
     + 'reiniciar: el motor de imagen recoge las cuentas nuevas solo, y el CLI '
     + 'lee la suya en cada llamada.'));
+}
+
+/* EL SALDO DE CADA CUENTA (nucleo/coste.saldo). Ni OpenAI ni Google dejan
+ * leerlo con la clave, así que se APUNTA lo que se carga y el estudio le resta
+ * lo que ha gastado desde entonces. Es una estimación y lo dice: lo que se
+ * gaste con la misma clave fuera del estudio no se ve. Se vuelve a apuntar al
+ * recargar y el desfase no se acumula. */
+function seccionSaldo() {
+  const vista = estadoConfig();
+  const caja = h('section', { clase: 'bloque-config' },
+    h('h3', {}, 'Saldo disponible'),
+    h('div', { clase: 'pista' },
+      'Apunta cuánto tienes cargado en cada cuenta cuando recargues. El estudio '
+      + 'resta lo que gasta y te avisa arriba, junto al coste, si baja del aviso. '
+      + 'Es aproximado: lo que gastes fuera del estudio con la misma clave no se ve.'));
+  if (vista.saldo === undefined) {
+    vista.saldo = null;
+    pedir(API.saldo())
+      .then(datos => { estadoConfig().saldo = datos; repintarClaves(); })
+      .catch(() => { estadoConfig().saldo = { cuentas: {} }; });
+  }
+  if (!vista.saldo) {
+    caja.appendChild(h('div', { clase: 'cargando' }, 'leyendo el saldo…'));
+    return caja;
+  }
+  const dolares = n => `${Number(n || 0).toFixed(2)} $`;
+  Object.entries(vista.saldo.cuentas || {}).forEach(([id, c]) => {
+    const cargado = h('input', {
+      type: 'number', min: '0', step: '0.01',
+      placeholder: 'cargado ($)', value: c.apuntado ? String(c.cargado) : '',
+    });
+    const minimo = h('input', {
+      type: 'number', min: '0', step: '0.5',
+      placeholder: 'avisar por debajo de ($)',
+      value: c.apuntado && c.minimo !== null && c.minimo !== undefined ? String(c.minimo) : '',
+    });
+    const estado = c.apuntado
+      ? pastillaEstado(c.bajo ? 'error' : 'ok', `quedan ≈ ${dolares(c.restante)}`)
+      : pastillaEstado('vacio', 'sin apuntar');
+    caja.appendChild(h('div', { clase: 'fila' },
+      h('b', {}, c.etiqueta), h('span', { clase: 'crece' }), estado));
+    if (c.apuntado) {
+      caja.appendChild(h('div', { clase: 'pista' },
+        `Apuntaste ${dolares(c.cargado)} el ${String(c.desde || '').replace('T', ' a las ').slice(0, 22)}; `
+        + `desde entonces el estudio ha gastado ${dolares(c.gastado)}.`));
+    }
+    caja.appendChild(h('div', { clase: 'fila-clave' }, cargado, minimo,
+      h('button', {
+        clase: 'mini',
+        title: 'Guarda lo que hay cargado AHORA: el gasto se cuenta desde este momento',
+        onclick: async () => {
+          if (cargado.value.trim() === '') { toast('escribe cuánto hay cargado', true); return; }
+          try {
+            estadoConfig().saldo = await pedir(API.saldo(), {
+              method: 'PUT',
+              cuerpo: { [id]: { cargado: Number(cargado.value), minimo: minimo.value === '' ? null : Number(minimo.value) } },
+            });
+            toast('saldo apuntado');
+            repintarClaves();
+            refrescarCosteLight(true);
+          } catch (e) { toast(e.message, true); }
+        },
+      }, 'Apuntar'),
+      h('a', { clase: 'boton mini fantasma', href: c.recarga, target: '_blank',
+               rel: 'noopener' }, 'Recargar'),
+      (c.apuntado ? h('button', {
+        clase: 'mini fantasma peligro',
+        title: 'Dejar de seguir esta cuenta',
+        onclick: async () => {
+          try {
+            estadoConfig().saldo = await pedir(API.saldo(), {
+              method: 'PUT', cuerpo: { [id]: { cargado: null } } });
+            repintarClaves();
+          } catch (e) { toast(e.message, true); }
+        },
+      }, 'Quitar') : null)));
+  });
+  return caja;
 }
 
 async function cargarAjustes() {
@@ -6742,8 +6824,23 @@ function costeLightAhora() {
   caja.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Claude'),
     h('span', { clase: 'meta', title: 'va contra la suscripción: no suma al total' },
       `${corto(cli.tokens.total)} tok`)));
+  // Veo solo si este video lo ha usado: la mayoria no, y un hueco mas no dice nada
+  const video = proveedorDe(datos, 'veo');
+  if (video.eventos) {
+    caja.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Veo'),
+      importeCoste(video, true)));
+  }
   caja.appendChild(h('span', { clase: 'prov total' }, h('b', {}, 'Total'),
     h('span', { clase: 'usd' }, `$${Number(datos.total_usd || 0).toFixed(2)}`)));
+  // EL SALDO BAJO, al lado de lo gastado: es donde se mira antes de pulsar
+  // «Generar», y un aviso que solo vive en Configuración no lo ve nadie
+  if ((datos.saldo_bajo || []).length) {
+    caja.appendChild(h('span', {
+      clase: 'presupuesto aviso',
+      title: 'Una cuenta ha bajado del aviso que pusiste. Mira el saldo en '
+        + 'Configuración (⚙) y recarga antes de generar.',
+    }, `⚠ saldo bajo: ${datos.saldo_bajo.join(', ')}`));
+  }
   if (datos.presupuesto_usd) {
     const fraccion = Math.min(1, Number(datos.fraccion_presupuesto) || 0);
     caja.appendChild(h('span', {

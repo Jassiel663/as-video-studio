@@ -491,6 +491,102 @@ def resumen_global(limite=None):
     return general
 
 
+# ------------------------------------------------------------------- saldo
+#
+# CUANTO QUEDA EN CADA CUENTA, y por que se calcula aqui en vez de preguntarlo:
+# ni OpenAI ni la Gemini API dejan leer el saldo con una clave de API (solo se
+# ve en sus webs; `comprobar_claves` ya lo dice). Lo que SI se sabe es lo que
+# se ha gastado, porque cada motor lo reporta aqui. Asi que quien recarga
+# apunta cuanto cargo, y el saldo es eso menos lo gastado DESDE ENTONCES.
+#
+# Es una ESTIMACION y se dice: el gasto de imagen sale de la tabla de tarifas y
+# no de la factura, y lo que se gaste fuera del estudio con la misma clave no
+# se ve. Se vuelve a apuntar al recargar y el error no se acumula.
+#
+# Vive junto a tarifas.json (en el servidor, en datos/) y no junto al codigo:
+# una actualizacion reescribe el arbol del codigo y se lo llevaria.
+
+RUTA_SALDO = (os.environ.get("ESTUDIO_SALDO")
+              or os.path.join(os.path.dirname(os.path.abspath(RUTA_TARIFAS)),
+                              "saldo.json"))
+
+#: Las cuentas con saldo que se puede agotar, con donde se recarga. Claude no
+#: esta: va por suscripcion y no tiene saldo que se acabe a mitad de un video.
+CUENTAS_SALDO = {
+    "openai": {"etiqueta": "OpenAI — imágenes",
+               "recarga": "https://platform.openai.com/settings/organization/billing"},
+    "veo": {"etiqueta": "Google Veo — vídeo",
+            "recarga": "https://aistudio.google.com/"},
+    "tts": {"etiqueta": "Cartesia — voz",
+            "recarga": "https://play.cartesia.ai/"},
+}
+
+
+def _leer_saldo():
+    datos = leer_json(RUTA_SALDO)
+    datos = datos if isinstance(datos, dict) else {}
+    cuentas = datos.get("cuentas")
+    return {"cuentas": cuentas if isinstance(cuentas, dict) else {}}
+
+
+def fijar_saldo(proveedor, cargado, minimo=None):
+    """Apunta lo que hay cargado AHORA en una cuenta. -> saldo()
+
+    `cargado` None quita la cuenta del seguimiento. El reloj del gasto empieza
+    en este momento: lo gastado antes ya estaba descontado en lo que se apunta.
+    """
+    if proveedor not in CUENTAS_SALDO:
+        raise ValueError(f"cuenta desconocida: {proveedor}. Son: "
+                         f"{', '.join(CUENTAS_SALDO)}")
+    datos = _leer_saldo()
+    if cargado is None:
+        datos["cuentas"].pop(proveedor, None)
+    else:
+        importe = _numero(cargado)
+        if importe is None or importe < 0:
+            raise ValueError("lo cargado tiene que ser un numero de dolares, 0 o mas")
+        # `_numero` da None a un negativo: sin mirar aparte, un aviso de -2 se
+        # guardaba en silencio como «sin aviso»
+        aviso = _numero(minimo) if minimo not in (None, "") else None
+        if minimo not in (None, "") and aviso is None:
+            raise ValueError("el aviso tiene que ser un numero de dolares, 0 o mas")
+        datos["cuentas"][proveedor] = {"cargado": round(importe, 2),
+                                       "minimo": None if aviso is None else round(aviso, 2),
+                                       "desde": ahora()}
+    escribir_json(RUTA_SALDO, datos)
+    return saldo()
+
+
+def saldo():
+    """Lo que queda en cada cuenta apuntada. -> {"cuentas": {...}, "bajos": [...]}"""
+    datos = _leer_saldo()["cuentas"]
+    registros = leer_jsonl(RUTA_GLOBAL) if datos else []
+    cuentas, bajos = {}, []
+    for proveedor, ficha in CUENTAS_SALDO.items():
+        apunte = datos.get(proveedor)
+        salida = {"etiqueta": ficha["etiqueta"], "recarga": ficha["recarga"],
+                  "apuntado": bool(apunte)}
+        if apunte:
+            desde = str(apunte.get("desde") or "")
+            # ESTRICTAMENTE DESPUES: los momentos van por segundos, y con `>=`
+            # lo gastado en el mismo segundo de la recarga --que ya estaba
+            # descontado en lo que se apunto-- se restaba otra vez
+            gastado = sum(_numero(r.get("usd")) or 0.0 for r in registros
+                          if r.get("proveedor") == proveedor
+                          and str(r.get("momento") or "") > desde)
+            cargado = _numero(apunte.get("cargado")) or 0.0
+            restante = round(cargado - gastado, 2)
+            minimo = _numero(apunte.get("minimo"))
+            bajo = minimo is not None and restante <= minimo
+            salida.update({"cargado": cargado, "desde": desde,
+                           "gastado": round(gastado, 2), "restante": restante,
+                           "minimo": minimo, "bajo": bajo})
+            if bajo:
+                bajos.append(proveedor)
+        cuentas[proveedor] = salida
+    return {"cuentas": cuentas, "bajos": bajos, "ruta": RUTA_SALDO}
+
+
 # ---------------------------------------------------------- contexto de medida
 
 class _Contexto:
