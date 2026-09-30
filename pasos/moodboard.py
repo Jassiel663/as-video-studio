@@ -667,7 +667,8 @@ def importar(carpeta, clave, raiz=None):
 # de las palabras del canal y las laminas salen de la guia, en ese orden.
 
 def dibujar_desde_guia(estilo, destino, ejes=None, calidad="medium",
-                       avisar=None, idioma="", peticiones=None):
+                       avisar=None, idioma="", peticiones=None,
+                       referencias=None):
     """Dibuja las laminas de un estilo DESCRITO. -> {rutas, ejes, coste_usd}.
 
     Sin fotogramas de entrada y sin tocar el banco de moodboards: las laminas se
@@ -701,6 +702,20 @@ def dibujar_desde_guia(estilo, destino, ejes=None, calidad="medium",
             "el estilo por defecto del generador")
     bloque = reglas.bloque_prompt("prompt_imagen")
 
+    # LAS IMAGENES APORTADAS VAN COMO REFERENCIA. El motor llama a la API de
+    # edicion, que sin adjuntos no se puede llamar (ver imagen.generar), asi que
+    # antes esto fallaba SIEMPRE. Y ademas son la fuente del estilo: la guia se
+    # escribio mirandolas, y el dibujo sale mas fiel si tambien las ve.
+    aportadas = [r for r in (referencias or []) if os.path.exists(r)]
+    if not aportadas:
+        raise RuntimeError(
+            "para dibujar las laminas de un estilo descrito hace falta al menos "
+            "una imagen de estilo aportada: el generador de imagenes no se puede "
+            "llamar sin ninguna referencia. Sube una imagen y vuelve a lanzarlo")
+    cache = os.path.join(os.path.dirname(os.path.abspath(destino)),
+                         "_refs_aportadas")
+    refs = [imagen.normalizar(r, cache) for r in aportadas]
+
     resultados = [None] * len(pedidos)
     hechas = [0]
     candado = threading.Lock()
@@ -716,9 +731,9 @@ def dibujar_desde_guia(estilo, destino, ejes=None, calidad="medium",
             con_lamina=False,
             encabezado="Produce one single full-frame image for a style "
                        "reference sheet.")
-        # SIN referencias: no hay ninguna que mandar, y mandar una lamina vacia
-        # es lo que provoca el "Unsupported content type" que no dice nada.
-        png, meta = imagen.generar(prompt, [], quality=calidad,
+        # con las aportadas como referencia: sin ninguna, la API de edicion
+        # rechaza la llamada con el "Unsupported content type" que no dice nada
+        png, meta = imagen.generar(prompt, refs, quality=calidad,
                                    tamano="apaisado")
         ruta = os.path.join(destino, f"{eje}.png")
         with open(ruta, "wb") as fh:
