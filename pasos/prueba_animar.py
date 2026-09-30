@@ -215,6 +215,63 @@ else:
         comprobar("un clip rechazado deja el plano quieto",
                   "fotogramas" not in otra and otra["hyper"] == origen)
         comprobar("y se dice en los avisos", avisos and "S009" in " ".join(avisos), avisos)
+
+        print("\n== sin cuota: no se pide mas, y lo guardado se sigue usando ==")
+        # uno guardado de antes (con el doble bueno) y dos que no estan
+        veo.generar = doble
+        guardada = escena("S020", direccion="A quiet street at night.")
+        animar.clip(Proyecto, guardada, origen, 640, 360, "fast",
+                    ventana=[0, 0, 1, 1])
+        pedidas = []
+
+        def sin_cuota(*a, **k):
+            pedidas.append(1)
+            raise veo.CuotaAgotada("You exceeded your current quota")
+        veo.generar = sin_cuota
+        mov = {"ventana_ini": [0, 0, 1, 1], "ventana_fin": [0, 0, 1, 1]}
+        t1 = {"id": "S021", "hyper": origen, "mov": dict(mov)}
+        t2 = {"id": "S020", "hyper": origen, "mov": dict(mov)}
+        t3 = {"id": "S022", "hyper": origen, "mov": dict(mov)}
+        antes = p8_render.VEO_A_LA_VEZ
+        p8_render.VEO_A_LA_VEZ = 1           # en orden, para poder contarlo
+        try:
+            avisos = p8_render._animar_tareas(
+                [(t1, escena("S021", direccion="A windy beach."), origen, mov),
+                 (t2, guardada, origen, mov),
+                 (t3, escena("S022", direccion="A foggy forest."), origen, mov)],
+                Proyecto, "fast", 640, 360, os.path.join(TEMPORAL, "trabajo"),
+                lambda *a: None)
+        finally:
+            p8_render.VEO_A_LA_VEZ = antes
+        igual("se pide UNA vez; tras la cuota agotada no se pide mas", len(pedidas), 1)
+        comprobar("el clip guardado se usa igual", bool(t2.get("fotogramas")), t2)
+        comprobar("los otros dos quedan quietos",
+                  "fotogramas" not in t1 and "fotogramas" not in t3)
+        texto = " ".join(avisos)
+        comprobar("y el aviso dice que es la cuota, y que no se ha cobrado",
+                  "sin cuota de Veo" in texto and "No se ha cobrado" in texto, avisos)
+
+        print("\n== leer el 429 de Google ==")
+
+        class Respuesta:
+            def __init__(self, cuerpo):
+                self.cuerpo = cuerpo
+                self.text = str(cuerpo)
+
+            def json(self):
+                return self.cuerpo
+        diario = Respuesta({"error": {"message": "You exceeded your current quota",
+                                      "details": [{"violations": [{
+                                          "quotaId": "PredictLongRunningRequestsPerDayPerProject"}]}]}})
+        igual("un quotaId PerDay es cuota diaria", veo._detalle_429(diario)[0], True)
+        minuto = Respuesta({"error": {"message": "Resource exhausted",
+                                      "details": [{"violations": [{
+                                          "quotaId": "RequestsPerMinutePerProject"}]},
+                                          {"retryDelay": "37s"}]}})
+        igual("uno de minuto no es diario y trae su espera",
+              veo._detalle_429(minuto)[:2], (False, 37.0))
+        igual("sin detalles se toma como de minuto",
+              veo._detalle_429(Respuesta({"error": {"message": "x"}}))[:2], (False, None))
     finally:
         veo.generar = original_generar
         animar.COSTE.reportar_veo = original_reportar

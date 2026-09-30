@@ -57,6 +57,42 @@ class Rechazado(RuntimeError):
     """Veo termino sin devolver video: su filtro de contenido lo descarto."""
 
 
+class CuotaAgotada(RuntimeError):
+    """La cuenta de Google se ha quedado sin cuota de Veo (429 que no se pasa
+    esperando un minuto). Quien anima un video deja de pedir clips al verla:
+    los que faltan fallarian igual, y cada intento es un reintento en balde."""
+
+
+def _detalle_429(respuesta):
+    """(es_de_dia, segundos_a_esperar, texto) leidos del cuerpo de un 429.
+
+    Google manda en `error.details` un QuotaFailure con el `quotaId` que ha
+    saltado (el diario lleva «PerDay») y a veces un RetryInfo con `retryDelay`
+    («30s»). Sin detalles se toma como de minuto: es el caso que se arregla
+    esperando, y si no se arregla acaba igual en CuotaAgotada.
+    """
+    try:
+        error = (respuesta.json() or {}).get("error") or {}
+    except ValueError:
+        error = {}
+    texto = str(error.get("message") or respuesta.text or "")[:400]
+    de_dia, espera = False, None
+    for detalle in error.get("details") or []:
+        for violacion in detalle.get("violations") or []:
+            cuota = f"{violacion.get('quotaId', '')} {violacion.get('quotaMetric', '')}"
+            if "perday" in cuota.lower().replace("_", "").replace("-", ""):
+                de_dia = True
+        retraso = str(detalle.get("retryDelay") or "")
+        if retraso.endswith("s"):
+            try:
+                espera = float(retraso[:-1])
+            except ValueError:
+                pass
+    if "per day" in texto.lower():
+        de_dia = True
+    return de_dia, espera, texto
+
+
 def clave():
     """La clave de la Gemini API, del entorno o del almacen del Estudio."""
     valor = (os.environ.get("GEMINI_API_KEY") or "").strip()
@@ -101,19 +137,35 @@ def _pedir(metodo, url, api_key, **kw):
     cabeceras = {"x-goog-api-key": api_key}
     cabeceras.update(kw.pop("headers", {}) or {})
     ultimo = None
-    for intento in range(5):
+    for intento in range(6):
         try:
             r = requests.request(metodo, url, headers=cabeceras, timeout=120, **kw)
         except requests.RequestException as fallo:
             ultimo = f"{type(fallo).__name__}: {fallo}"
             time.sleep(min(5 * (intento + 1), 30))
             continue
-        # 429 es cuota por minuto: se espera y se vuelve. Un 5xx, igual.
-        if r.status_code in (429, 500, 502, 503, 504):
+        # UN 429 NO ES SIEMPRE «ESPERA UN MINUTO». El 30-09-2026 un video pidio
+        # 27 clips: 13 salieron y los 14 siguientes se reintentaron cinco veces
+        # cada uno contra «You exceeded your current quota», que no se pasa
+        # esperando. La cuota DIARIA corta en seco; la de minuto espera lo que
+        # diga Google (o un minuto si no lo dice) y, si tras los intentos sigue,
+        # tambien se da por agotada.
+        if r.status_code == 429:
+            de_dia, espera, texto = _detalle_429(r)
+            ultimo = f"HTTP 429: {texto}"
+            if de_dia:
+                raise CuotaAgotada(f"se ha acabado la cuota DIARIA de Veo de la "
+                                   f"cuenta de Google: {texto}")
+            time.sleep(min(espera or 60.0, 120.0))
+            continue
+        if r.status_code in (500, 502, 503, 504):
             ultimo = f"HTTP {r.status_code}: {r.text[:300]}"
             time.sleep(min(10 * (intento + 1), 60))
             continue
         return r
+    if ultimo and ultimo.startswith("HTTP 429"):
+        raise CuotaAgotada(f"la cuenta de Google sigue sin cuota de Veo tras "
+                           f"esperar varias veces: {ultimo}")
     raise RuntimeError(f"Veo no contesta tras varios intentos: {ultimo}")
 
 

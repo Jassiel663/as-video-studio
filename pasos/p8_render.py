@@ -1128,8 +1128,6 @@ def _correr_lotes_en_procesos(lotes, trabajo, avisar, total_planos,
     return salida
 
 
-#: Lo que este paso entiende como opcion DE ESTA INVOCACION (no es un param y
-#: no mueve la firma): volver a montar el MP4 sin tocar un solo clip.
 #: Cuantos clips de Veo se piden a la vez. Cada uno tarda ~45 s en el servidor
 #: de Google y el limite de la API es por minuto: cuatro en paralelo ponen un
 #: video de ochenta planos animados en un cuarto de hora, sin rozar el tope.
@@ -1155,13 +1153,21 @@ def _animar_tareas(candidatos, proyecto, modo, ancho, alto, trabajo, avisar):
     contexto = COSTE.contexto_actual()
     hechos = {"pagados": 0, "cache": 0, "listos": 0}
     candado = threading.Lock()
-    fallos = []
+    fallos, sin_cuota = [], []
+    # SIN CUOTA, NO SE PIDE MAS. En cuanto un clip dice que la cuenta se ha
+    # quedado sin cuota, los demas solo miran el cache: pedir los que faltan
+    # seria fallar igual, y con reintentos de minutos cada uno.
+    agotada = threading.Event()
 
     def uno(tarea, escena, hyper, mov):
         def pedir():
-            ruta, pagado = animar.clip(proyecto, escena, hyper, ancho, alto, modo,
-                                       ventana=mov.get("ventana_ini"))
-            return ruta, pagado
+            try:
+                return animar.clip(proyecto, escena, hyper, ancho, alto, modo,
+                                   ventana=mov.get("ventana_ini"),
+                                   solo_cache=agotada.is_set())
+            except veo.CuotaAgotada:
+                agotada.set()
+                raise
         # el hilo no hereda la pila de contexto del medidor: se la pone igual
         # que la del render, o el gasto se anotaria sin proyecto
         if contexto is not None:
@@ -1187,6 +1193,9 @@ def _animar_tareas(candidatos, proyecto, modo, ancho, alto, trabajo, avisar):
             tarea = futuros[futuro][0]
             try:
                 rutas, fps_clip = futuro.result()
+            except veo.CuotaAgotada:
+                sin_cuota.append(tarea["id"])
+                continue
             except Exception as fallo:                     # noqa: BLE001
                 fallos.append(f"{tarea['id']} ({type(fallo).__name__}: "
                               f"{str(fallo)[:120]})")
@@ -1202,6 +1211,14 @@ def _animar_tareas(candidatos, proyecto, modo, ancho, alto, trabajo, avisar):
         avisos.append(f"{hechos['listos']} plano(s) animados con Veo ({modo}): "
                       f"{hechos['pagados']} generados ahora, {hechos['cache']} "
                       f"reutilizados sin volver a pagar.")
+    if sin_cuota:
+        avisos.append(f"{len(sin_cuota)} plano(s) sin animar porque la cuenta de "
+                      f"Google se ha quedado sin cuota de Veo ({', '.join(sin_cuota[:6])}"
+                      + (f" y {len(sin_cuota) - 6} más" if len(sin_cuota) > 6 else "")
+                      + "): han salido con imagen y zoom. No se ha cobrado nada por "
+                        "ellos. La cuota se renueva sola (se ve en aistudio.google.com "
+                        "› Rate limit); al volver a montar se animan los que faltan y "
+                        "los ya hechos no se vuelven a pagar.")
     if fallos:
         avisos.append(f"{len(fallos)} plano(s) no se pudieron animar y han salido "
                       f"con imagen y zoom: " + "; ".join(fallos[:4])
@@ -1209,6 +1226,8 @@ def _animar_tareas(candidatos, proyecto, modo, ancho, alto, trabajo, avisar):
     return avisos
 
 
+#: Lo que este paso entiende como opcion DE ESTA INVOCACION (no es un param y
+#: no mueve la firma): volver a montar el MP4 sin tocar un solo clip.
 OPCIONES_EJECUCION = ("solo_montar",)
 
 

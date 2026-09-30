@@ -185,8 +185,14 @@ def carpeta_de(proyecto):
     return os.path.join(raiz, "video_ia")
 
 
-def clip(proyecto, escena, hyper, ancho, alto, modo, ventana=None, avisar=None):
-    """El clip de Veo de este plano, del cache o recien pagado. -> (ruta, pagado)"""
+def clip(proyecto, escena, hyper, ancho, alto, modo, ventana=None, avisar=None,
+         solo_cache=False):
+    """El clip de Veo de este plano, del cache o recien pagado. -> (ruta, pagado)
+
+    Con `solo_cache` no se pide nada a Veo: si el clip no estaba guardado se
+    levanta CuotaAgotada. Es lo que se usa cuando la cuenta ya se ha quedado
+    sin cuota en este mismo montaje: lo guardado no gasta cuota y sigue valiendo.
+    """
     veo = medios.motor("video_veo/veo.py")
     duracion = float(escena["t_out"]) - float(escena["t_in"])
     segundos, resolucion = veo.duracion_de_clip(duracion)
@@ -202,6 +208,9 @@ def clip(proyecto, escena, hyper, ancho, alto, modo, ventana=None, avisar=None):
     destino = os.path.join(carpeta, f"{escena['id']}_{huella.hexdigest()[:16]}.mp4")
     if os.path.exists(destino) and os.path.getsize(destino) > 0:
         return destino, False
+    if solo_cache:
+        raise veo.CuotaAgotada("sin cuota de Veo en este montaje y el clip no "
+                               "estaba guardado")
     mp4, meta = veo.generar(entrada, prompt, modo=modo, segundos=segundos,
                             resolucion=resolucion,
                             aspecto="9:16" if alto > ancho else "16:9",
