@@ -61,7 +61,7 @@ Remove-Item -Force $env:ESTUDIO_ESTADISTICAS -ErrorAction SilentlyContinue
 $suites = @(
   'prueba_api.py', 'prueba_coste_capturas.py',
   'nucleo\prueba_nucleo.py', 'nucleo\prueba_adversarial.py',
-  'nucleo\prueba_manifiestos.py',
+  'nucleo\prueba_manifiestos.py', 'nucleo\prueba_cola.py',
   'pasos\prueba_ajustes.py', 'pasos\prueba_login.py',
   'pasos\prueba_asistente.py', 'pasos\prueba_salud_cli.py',
   'pasos\prueba_enrutar_estilo.py',

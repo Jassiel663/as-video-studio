@@ -162,6 +162,19 @@ def fijar_raiz_proyectos(ruta):
     return _ESTADO_SERVICIO["raiz"]
 
 
+#: LA COLA DE LOS TRABAJOS PESADOS (nucleo/trabajos.py, `_Turno`). Los que
+#: dibujan imagenes o renderizan pasan de uno en uno aunque sean de videos
+#: distintos: dos a la vez tardan el doble por imagen, pierden el registro del
+#: gasto y se reparten el servidor sin acabar antes. Se apaga con
+#: ESTUDIO_COLA=0 (las suites que prueban dos trabajos a la vez).
+COLA_PESADOS = os.environ.get("ESTUDIO_COLA", "1") != "0"
+#: Los pasos que, lanzados sueltos, son pesados.
+PASOS_PESADOS = ("assets", "render")
+#: Y las pestanas de una tanda que los llevan dentro: el guion y la voz no
+#: esperan a nadie, las imagenes y el montaje si.
+PESTANAS_PESADAS = ("video", "render")
+
+
 class Contexto:
     """Todo lo que hace falta para operar sobre un proyecto concreto."""
 
@@ -529,7 +542,8 @@ def lanzar_paso(ctx, paso_id, unidades, nombre=None, evento="paso_lanzado",
 
     trabajo_id = ctx.gestor.lanzar(nombre or paso_id, _correr_paso, ctx, paso_id,
                                    unidades, opciones or {}, paso=paso_id,
-                                   unidades=unidades)
+                                   unidades=unidades,
+                                   cola=COLA_PESADOS and paso_id in PASOS_PESADOS)
     _registrar_trabajo(trabajo_id, ctx.id)
     ficha = {"trabajo": trabajo_id, "unidades": unidades or "todas"}
     ficha.update(datos or {})
@@ -2938,7 +2952,8 @@ def generar_moodboard(pid: str, cuerpo: dict = Body(default=None)):
                   if k in mod.EJES and str(v).strip()}
     calidad = str(datos.get("calidad") or "medium")
     trabajo_id = ctx.gestor.lanzar("moodboard", _correr_moodboard, ctx, ejes,
-                                   peticiones, calidad, paso="assets")
+                                   peticiones, calidad, paso="assets",
+                                   cola=COLA_PESADOS)
     _registrar_trabajo(trabajo_id, ctx.id)
     return {"trabajo_id": trabajo_id, "ejes": ejes or sorted(mod.EJES),
             "trabajo": ctx.gestor.estado(trabajo_id),
@@ -5919,7 +5934,8 @@ def generar_pestana(pid: str, pestana: str, cuerpo: dict = Body(default=None)):
 
     trabajo_id = ctx.gestor.lanzar(f"receta:{pestana}", _correr_receta, ctx,
                                    pestana, receta, puestas, modo,
-                                   paso=orden[0]["paso"])
+                                   paso=orden[0]["paso"],
+                                   cola=COLA_PESADOS and pestana in PESTANAS_PESADAS)
     _registrar_trabajo(trabajo_id, ctx.id)
     ctx.bitacora.anotar("receta_lanzada", orden[0]["paso"],
                         {"pestana": pestana, "modo": modo,
@@ -7782,7 +7798,8 @@ def crear_preset_light(cuerpo: dict = Body(default=None)):
                          "ritmo": encargo.get("ritmo"), "retomado": retomar,
                          "aportadas": len(aportadas)})
     trabajo_id = ctx.gestor.lanzar("preset_light", _correr_preset_light, ctx,
-                                   encargo, None, None, retomar, paso="assets")
+                                   encargo, None, None, retomar, paso="assets",
+                                   cola=COLA_PESADOS)
     _registrar_trabajo(trabajo_id, ctx.id)
     return {"trabajo_id": trabajo_id, "taller": ctx.id, "encargo": encargo,
             "retomado": retomar, "plan": _light().plan_de(encargo),
@@ -8048,7 +8065,7 @@ def regenerar_preset_light(preset_id: str, cuerpo: dict = Body(default=None)):
 
     trabajo_id = ctx.gestor.lanzar(
         "preset_light", _correr_preset_light, ctx, encargo,
-        list(tareas), preset_id, paso="assets")
+        list(tareas), preset_id, paso="assets", cola=COLA_PESADOS)
     _registrar_trabajo(trabajo_id, ctx.id)
     return {"trabajo_id": trabajo_id, "taller": ctx.id, "parte": parte,
             "fuente_nueva": bool(fuente), "material_nuevo": material,
@@ -8930,7 +8947,9 @@ def generar_video(pid: str, cuerpo: dict = Body(default=None)):
 
         trabajo_id = ctx.gestor.lanzar("generar:" + "+".join(elegidas),
                                        _correr_cadena, ctx, elegidas, modo, datos,
-                                       plan, paso=plan["fases"][0]["tareas"][0]["paso"])
+                                       plan, paso=plan["fases"][0]["tareas"][0]["paso"],
+                                       cola=COLA_PESADOS and any(
+                                           p in PESTANAS_PESADAS for p in elegidas))
     _registrar_trabajo(trabajo_id, ctx.id)
     ctx.bitacora.anotar("generacion_lanzada", None, {
         "pestanas": elegidas, "modo": modo, "tareas": plan["tareas"],

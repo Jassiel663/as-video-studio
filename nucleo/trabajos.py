@@ -35,6 +35,65 @@ class Cancelado(Exception):
     """Se lanza dentro del trabajo cuando alguien pide cancelarlo."""
 
 
+class _Turno:
+    """La cola de los trabajos PESADOS, comun a todos los videos.
+
+    Hay un gestor por proyecto, asi que dos videos no sabian nada el uno del
+    otro: se podian lanzar dos tandas de imagenes a la vez, y eso es justo lo
+    que CLAUDE.md prohibe --tardan el doble por imagen y se pierde el registro
+    del gasto--, y dos renders a la vez se reparten el servidor y no acaban
+    antes. Los trabajos que se lanzan con `cola=True` pasan de uno en uno, en
+    el orden en que se pidieron; los ligeros (guion, voz, previas) no esperan.
+
+    La espera es COOPERATIVA con la cancelacion: un trabajo en cola que se
+    cancela sale de la fila sin haber empezado.
+    """
+
+    def __init__(self):
+        self._cond = threading.Condition()
+        self._fila = []
+        self._dueno = None
+
+    def entrar(self, trabajo_id, sigue, al_esperar):
+        """Espera el turno. -> True si lo consigue, False si `sigue()` se apaga."""
+        with self._cond:
+            self._fila.append(trabajo_id)
+        try:
+            while True:
+                with self._cond:
+                    if self._dueno is None and self._fila[0] == trabajo_id:
+                        self._fila.pop(0)
+                        self._dueno = trabajo_id
+                        return True
+                    delante = self._fila.index(trabajo_id) + (
+                        1 if self._dueno is not None else 0)
+                if not sigue():
+                    return False
+                al_esperar(delante)
+                with self._cond:
+                    self._cond.wait(1.0)
+        finally:
+            with self._cond:
+                if trabajo_id in self._fila:
+                    self._fila.remove(trabajo_id)
+                    self._cond.notify_all()
+
+    def salir(self, trabajo_id):
+        with self._cond:
+            if self._dueno == trabajo_id:
+                self._dueno = None
+                self._cond.notify_all()
+
+    def foto(self):
+        """{"ahora": id o None, "fila": [ids]} para quien quiera ensenarla."""
+        with self._cond:
+            return {"ahora": self._dueno, "fila": list(self._fila)}
+
+
+#: EL turno, uno para todo el proceso: por eso vive aqui y no en cada gestor.
+TURNO = _Turno()
+
+
 class GestorTrabajos:
     """Lanza funciones en hilos y expone su progreso de forma consultable."""
 
@@ -48,8 +107,12 @@ class GestorTrabajos:
         self._lock = threading.RLock()
 
     def lanzar(self, nombre, funcion, *args, paso=None, unidad=None,
-               unidades=None, **kwargs):
-        """Arranca un trabajo en segundo plano y devuelve su identificador."""
+               unidades=None, cola=False, **kwargs):
+        """Arranca un trabajo en segundo plano y devuelve su identificador.
+
+        Con `cola=True` el trabajo es PESADO (imagenes, render) y espera su
+        turno en `TURNO` antes de empezar: ver `_Turno`.
+        """
         if not callable(funcion):
             raise TypeError("funcion debe ser invocable")
         trabajo_id = uuid.uuid4().hex[:12]
@@ -72,6 +135,8 @@ class GestorTrabajos:
             "inicio": time.time(),
             "fin": None,
             "cancelar": False,
+            "cola": bool(cola),
+            "por_delante": 0,
         }
         with self._lock:
             self._trabajos[trabajo_id] = registro
@@ -168,6 +233,9 @@ class GestorTrabajos:
             "resultado": registro["resultado"],
             "error": registro["error"],
             "segundos": round(fin - registro["inicio"], 2),
+            # en la fila y cuantos hay delante; 0 en cuanto le toca
+            "en_cola": bool(registro.get("por_delante")),
+            "por_delante": int(registro.get("por_delante") or 0),
         }
 
     def _podar(self):
@@ -205,7 +273,44 @@ class GestorTrabajos:
             paso = registro["paso"]
             nombre = registro["nombre"]
             unidad = registro["unidad"]
+            con_cola = registro.get("cola")
 
+        if con_cola:
+            # EN LA FILA SE ESTA «EJECUTANDO» AL 0 %, y no «pendiente», a
+            # proposito: la pantalla del video solo ensena la barra --y con ella
+            # el mensaje y el boton de parar-- de un trabajo que ejecuta. Con
+            # «pendiente» un video en cola pareceria parado sin motivo.
+            def al_esperar(delante):
+                texto = (f"en cola: {delante} "
+                         f"{'trabajo pesado' if delante == 1 else 'trabajos pesados'} "
+                         f"por delante; empieza solo cuando acaben")
+                self._fijar(trabajo_id, por_delante=delante, mensaje=texto,
+                            publico=f"En cola: {delante} por delante")
+
+            def sigue():
+                with self._lock:
+                    return not self._trabajos[trabajo_id]["cancelar"]
+
+            if not TURNO.entrar(trabajo_id, sigue, al_esperar):
+                self._fijar(trabajo_id, estado="cancelado", fin=time.time(),
+                            por_delante=0, mensaje="cancelado en la cola",
+                            publico="cancelado")
+                if self.bitacora is not None:
+                    self.bitacora.anotar("trabajo_cancelado", paso,
+                                         {"trabajo": nombre, "id": trabajo_id,
+                                          "en_cola": True}, unidad)
+                return
+            # el reloj del trabajo empieza al empezar, no al pedirlo: lo que
+            # queda se calcula con lo transcurrido, y la espera no es trabajo
+            self._fijar(trabajo_id, por_delante=0, inicio=time.time(),
+                        mensaje="", publico="")
+        try:
+            self._ejecutar(trabajo_id, funcion, args, kwargs, paso, nombre, unidad)
+        finally:
+            if con_cola:
+                TURNO.salir(trabajo_id)
+
+    def _ejecutar(self, trabajo_id, funcion, args, kwargs, paso, nombre, unidad):
         if paso and self.estado_grafo is not None:
             self.estado_grafo.marcar_ejecutando(paso)
         if self.bitacora is not None:

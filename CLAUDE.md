@@ -23,7 +23,12 @@ pantalla ofrece regenerar el vídeo entero sin que nadie haya pedido nada. Las
 pantallas editan una copia y solo guardan cuando alguien toca algo.
 
 **2. Las tandas de imágenes se lanzan DE UNA EN UNA.** Dos a la vez tardan el
-doble por imagen y pierden el registro del gasto.
+doble por imagen y pierden el registro del gasto. Desde el 30-09-2026 lo impone
+el propio servicio: los trabajos pesados (imágenes, taller de estilo, render)
+se lanzan con `cola=True` y pasan por `nucleo/trabajos.TURNO` de uno en uno,
+aunque sean de vídeos distintos; mientras esperan se ven «ejecutando» al 0 %
+con «En cola: N por delante». Los ligeros (guion, voz) no esperan. Se apaga con
+`ESTUDIO_COLA=0`.
 
 **3. Un guardián calibrado sobre un fallo aprende a dar por bueno ese fallo.**
 `p6_assets._planos_repetidos` tumba la tanda si dos planos acaban con la MISMA
@@ -291,7 +296,7 @@ que nunca la fijaron, y regenerarlas se paga.
 powershell -NoProfile -File pruebas.ps1
 ```
 
-Las veinticinco en verde, y las herramientas de análisis sin nada que decir
+Las veintiséis en verde, y las herramientas de análisis sin nada que decir
 (`huerfanas_js` trae dos sospechosas de siempre, `async` y `fallar`, que no son
 llamadas).
 Y si has tocado la interfaz, **ábrela**: una regla de CSS de menos o un bloque
