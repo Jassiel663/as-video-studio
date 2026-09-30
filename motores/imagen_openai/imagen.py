@@ -22,6 +22,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -523,10 +524,15 @@ def normalizar(ruta, cache_dir, lado_max=1024):
     # que manda a buscar un fichero corrupto en el disco -- y en el disco no hay
     # ninguno, porque para cuando alguien va a mirarlo ya se termino de escribir.
     # Visto el 25-08 tumbando una tanda en el plano 89 de 93, con las 88
-    # anteriores ya pagadas. El temporal lleva el pid y el hilo dentro para que
-    # dos escritores simultaneos tampoco se pisen entre ellos.
-    temporal = "%s.%d.%d.tmp" % (destino, os.getpid(),
-                                 threading.get_ident() & 0xffff)
+    # anteriores ya pagadas. El temporal lleva el pid, el hilo ENTERO y un
+    # azar dentro para que dos escritores simultaneos tampoco se pisen entre
+    # ellos. Llevaba solo los 16 bits bajos del hilo: en Windows cambian de un
+    # hilo a otro, pero en Linux el ident es la direccion de la pila, alineada,
+    # y esos 16 bits salen IGUALES en todos los hilos. Dos cadenas escribian el
+    # mismo temporal, la primera lo movia y la segunda moria con
+    # FileNotFoundError: tumbo una tanda en el plano 190 de 200 (30-09-2026).
+    temporal = "%s.%d.%d.%s.tmp" % (destino, os.getpid(), threading.get_ident(),
+                                    uuid.uuid4().hex[:8])
     img.save(temporal, "PNG")
     return _sustituir(temporal, destino, ruta)
 
@@ -569,6 +575,11 @@ def _sustituir(temporal, destino, origen):
         try:
             os.replace(temporal, destino)
             return destino
+        except FileNotFoundError as choque:
+            # EL TEMPORAL YA NO ESTA: otro escritor lo movio. Si el destino
+            # esta al dia es el mismo fichero byte a byte (ver arriba) y vale.
+            fallo = choque
+            break
         except PermissionError as choque:
             fallo = choque
             if espera:
