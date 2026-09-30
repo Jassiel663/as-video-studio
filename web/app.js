@@ -6621,6 +6621,10 @@ function textoDelPlan(tanda) {
       ? `${coste.imagenes_por_generar} imágenes (${coste.imagenes_hechas} ya hechas)`
       : `${coste.imagenes} imágenes`);
   }
+  // los clips de Veo, dichos: sin esto el precio subia sin decir por que
+  if (coste.clips_veo) {
+    partes.push(`${coste.clips_veo} ${coste.clips_veo === 1 ? 'plano animado' : 'planos animados'} con Veo`);
+  }
   if (coste.usd_total) {
     partes.push(coste.imagenes_hechas
       ? `≈ ${Number(coste.usd_por_generar).toFixed(2)} $ · hasta ${Number(coste.usd_total).toFixed(2)} $ si hay que rehacerlas`
@@ -8199,6 +8203,9 @@ function filaVideoIaLight() {
         toast(valor ? `los planos sin texto se animarán con Veo (${valor}) al regenerar`
                     : 'Veo apagado: los planos saldrán con imagen y zoom');
         refrescarCosteLight(true);
+        // el montaje acaba de quedar obsoleto (o al dia): el boton y el
+        // presupuesto lo dicen YA, sin esperar al siguiente sondeo del plan
+        refrescarPlanLight('render', true);
         refrescarVivosLight();
       } catch (e) { toast(e.message, true); }
     },
