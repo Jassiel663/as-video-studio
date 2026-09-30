@@ -942,7 +942,8 @@ def previsualizar(ruta_png, ruta_svg, destino, ruta_fija=None, mov=None,
     ruta_html = medios.escribir_texto(destino + ".html", html)
     medios.rasterizar(ruta_html, destino, ancho, alto, transparente=False)
     os.remove(ruta_html)
-    _comprobar_previa(destino)
+    _comprobar_previa(destino, fuente=ruta_png, origen=(x0, y0), escala=escala,
+                      lienzo=lienzo)
     return destino
 
 
@@ -951,7 +952,15 @@ def previsualizar(ruta_png, ruta_svg, destino, ruta_fija=None, mov=None,
 FONDO_PREVIA = (0x0b, 0x0c, 0x09)
 
 
-def _comprobar_previa(destino):
+#: Fraccion minima de pixeles oscuros para que un cuadro con la esquina blanca
+#: se tenga por cuadro. La pagina de error de Edge es un lienzo blanco con una
+#: linea de texto gris (muy por debajo del 1 %); un plano de un estilo de fondo
+#: blanco lleva sus trazos y, en la previa, la caja del subtitulo.
+MINIMO_OSCURO_PREVIA = 0.01
+
+
+def _comprobar_previa(destino, fuente=None, origen=(0.0, 0.0), escala=1.0,
+                      lienzo=TAMANO):
     """Levanta si el PNG compuesto no es el cuadro, sino otra cosa.
 
     EDGE NO FALLA CUANDO NO ENCUENTRA ALGO: pinta SU pagina de error --«File not
@@ -968,16 +977,49 @@ def _comprobar_previa(destino):
 
     Levanta y no borra el PNG: quien llama lo recoge como aviso (ver `ejecutar`)
     y asi queda en disco para poder mirarlo si alguien pregunta por que.
+
+    PERO UN ESTILO DE FONDO BLANCO TAMBIEN TIENE LA ESQUINA BLANCA. Con solo la
+    esquina, las muestras de un canal de monigotes sobre blanco fallaban SIEMPRE
+    con «Edge ha fotografiado una pagina de error» y el cuadro estaba perfecto
+    (30-09-2026, taller «que pasa si»). Asi que una esquina blanca solo es la
+    pagina de error si la imagen de partida NO es blanca ahi, o si el cuadro
+    no tiene dibujo: la pagina de error es blanca con una linea de texto, un
+    plano de verdad lleva sus trazos (ver MINIMO_OSCURO_PREVIA).
     """
     try:
         from PIL import Image                                 # noqa: PLC0415
-        esquina = Image.open(destino).convert("RGB").load()[5, 5]
+        cuadro = Image.open(destino).convert("RGB")
+        esquina = cuadro.load()[5, 5]
     except Exception:                                         # noqa: BLE001
         return
-    if min(esquina) > 200:
-        raise RuntimeError(
-            f"la previa salio en blanco ({esquina}): Edge ha fotografiado una "
-            f"pagina de error en vez del cuadro")
+    if min(esquina) <= 200:
+        return
+    if fuente and _fuente_blanca_en(fuente, origen, escala, lienzo):
+        pequeno = cuadro.convert("L").resize((192, 108))
+        oscuros = sum(1 for v in pequeno.getdata() if v < 128)
+        if oscuros / float(192 * 108) >= MINIMO_OSCURO_PREVIA:
+            return
+    raise RuntimeError(
+        f"la previa salio en blanco ({esquina}): Edge ha fotografiado una "
+        f"pagina de error en vez del cuadro")
+
+
+def _fuente_blanca_en(fuente, origen, escala, lienzo):
+    """Si la imagen de partida es casi blanca donde cae la esquina del cuadro."""
+    try:
+        from PIL import Image                                 # noqa: PLC0415
+        with Image.open(fuente) as imagen:
+            imagen = imagen.convert("RGB")
+            ancho, alto = imagen.size
+            # la esquina (5, 5) del cuadro, llevada al lienzo y de ahi a pixeles
+            # de la imagen, que puede no tener el tamano del lienzo
+            x = (float(origen[0]) + 5.0 / max(escala, 1e-6)) * ancho / float(lienzo[0])
+            y = (float(origen[1]) + 5.0 / max(escala, 1e-6)) * alto / float(lienzo[1])
+            pixel = imagen.load()[min(ancho - 1, max(0, int(x))),
+                                  min(alto - 1, max(0, int(y)))]
+    except Exception:                                         # noqa: BLE001
+        return False
+    return min(pixel) > 200
 
 
 # ------------------------------------------------------------------ capturas
