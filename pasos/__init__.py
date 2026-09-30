@@ -54,6 +54,8 @@ from . import p1_ingesta, p2_brief, p3_guion  # noqa: E402,F401
 from . import p4_voz, p5_revision_audio, presets_voz  # noqa: E402,F401
 from . import presets_canal, recetas, tono  # noqa: E402,F401
 from . import medios, moodboard  # noqa: E402,F401
+# shorts (canales de shorts y recortes gratis) depende de medios, comun y el CLI
+from . import shorts  # noqa: E402,F401
 # encuadres (que clase de plano es cada uno) lo
 # Wikimedia Commons; antes se llamaba commons.py, a un typo de comun.py) los
 from . import encuadres  # noqa: E402,F401
@@ -100,5 +102,5 @@ __all__ = ["catalogo_visual", "conservar", "repaso",
            "p4_voz", "p5_revision_audio", "presets_voz", "presets_canal",
            "presets_light", "recetas", "sonido", "tipografia", "subtitulos", "tono", "transiciones",
            "voz_descrita",
-           "animar", "p6_assets", "p7_callouts", "p8_render",
+           "animar", "shorts", "p6_assets", "p7_callouts", "p8_render",
            "MODULOS", "modulo_de"]

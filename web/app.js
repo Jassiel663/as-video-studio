@@ -411,6 +411,9 @@ const API = {
   apartar: pid => `${BASE}/api/proyectos/${encodeURIComponent(pid)}`,
   duplicar: pid => `${BASE}/api/proyectos/${encodeURIComponent(pid)}/duplicar`,
   short: pid => `${BASE}/api/proyectos/${encodeURIComponent(pid)}/short`,
+  shorts: () => `${BASE}/api/shorts`,
+  canalShort: id => `${BASE}/api/shorts/canales/${encodeURIComponent(id)}`,
+  recortes: pid => `${BASE}/api/proyectos/${encodeURIComponent(pid)}/recortes`,
   papelera: () => `${BASE}/api/proyectos/papelera`,
   papeleraFicha: carpeta => `${BASE}/api/proyectos/papelera/${encodeURIComponent(carpeta)}`,
   restaurar: carpeta => `${BASE}/api/proyectos/papelera/${encodeURIComponent(carpeta)}/restaurar`,
@@ -4911,6 +4914,11 @@ async function cargarGaleriaLight(forzar) {
         .filter(p => p.video_light)
         .sort((a, b) => String(b.actualizado || '').localeCompare(String(a.actualizado || '')));
     } catch (e) { APP.light.datos.videos = []; }
+    // LA ZONA SHORTS: qué estilos son canales de shorts y los recortes gratis.
+    // Un servidor sin la ruta deja la zona vacía, no la pantalla rota.
+    try {
+      APP.light.datos.shorts = await pedir(API.shorts());
+    } catch (e) { APP.light.datos.shorts = { canales: [], recortes: [] }; }
     // el ritmo de fábrica lo dice el servidor, no esta pantalla
     if (APP.light.encargo && !APP.light.encargo.ritmo) {
       APP.light.encargo.ritmo = ritmoPorDefecto();
@@ -5343,9 +5351,52 @@ function irALight(vista, extra) {
 
 /* ------------------------------------------------------------- la galería */
 
+/* DOS ZONAS: VÍDEOS Y SHORTS. Cada una con su portada: sus estilos (los
+   canales de shorts son estilos marcados), sus vídeos y su forma de crear. La
+   zona elegida se recuerda en este navegador. */
+function zonaLight() {
+  try { return localStorage.getItem('estudio.light.zona') === 'shorts' ? 'shorts' : 'videos'; }
+  catch (e) { return 'videos'; }
+}
+
+function selectorZonaLight() {
+  const actual = zonaLight();
+  const tira = h('div', { clase: 'tira-modos zonas' });
+  [['videos', '▭ Vídeos'], ['shorts', '▯ Shorts']].forEach(([id, texto]) => {
+    tira.appendChild(h('button', {
+      clase: 'mini' + (id === actual ? ' activo' : ''),
+      onclick: () => {
+        try { localStorage.setItem('estudio.light.zona', id); } catch (e) { /* sin almacén */ }
+        pintarLight();
+      },
+    }, texto));
+  });
+  return tira;
+}
+
+function shortsLight() { return (APP.light.datos || {}).shorts || { canales: [], recortes: [] }; }
+
+function esCanalShort(id) { return (shortsLight().canales || []).includes(id); }
+
+function esShortVideo(video) { return !!(video && (video.short || video.short_de)); }
+
+async function marcarCanalShort(ficha, deShorts) {
+  try {
+    await pedir(API.canalShort(ficha.id), { method: 'PUT', cuerpo: { shorts: deShorts } });
+    toast(deShorts ? `«${ficha.nombre}» es ahora un canal de shorts`
+      : `«${ficha.nombre}» vuelve a los estilos de vídeos`);
+    await cargarGaleriaLight(true);
+  } catch (e) { toast(e.message, true); }
+}
+
 function vistaGaleriaLight() {
   const caja = h('div', {});
-  const fichas = presetsLight();
+  caja.appendChild(selectorZonaLight());
+  if (zonaLight() === 'shorts') {
+    caja.appendChild(vistaShortsLight());
+    return caja;
+  }
+  const fichas = presetsLight().filter(f => !esCanalShort(f.id));
   caja.appendChild(h('div', { clase: 'light-cab' },
     h('h2', {}, 'Tus estilos'),
     h('span', { clase: 'meta' }, fichas.length
@@ -5361,7 +5412,7 @@ function vistaGaleriaLight() {
      una recarga, del móvil, de otro día— y sin esta lista un vídeo a medio
      generar no tenía desde dónde retomarse: seguía corriendo en el servidor y
      no había ningún camino hasta él. */
-  const videos = videosLight().filter(v => !v.short_de);
+  const videos = videosLight().filter(v => !esShortVideo(v));
   if (videos.length) {
     caja.appendChild(h('div', { clase: 'light-cab' },
       h('h2', {}, 'Tus vídeos'),
@@ -5370,7 +5421,6 @@ function vistaGaleriaLight() {
     videos.forEach(video => lista.appendChild(filaVideoLista(video)));
     caja.appendChild(lista);
   }
-  caja.appendChild(seccionShortsLight(videos));
 
   /* LOS INTENTOS A MEDIAS. Un taller nace antes que su estilo, así que una
      generación que falla deja una carpeta de cientos de megas sin nadie que la
@@ -5427,7 +5477,7 @@ function tarjetaEstiloLight(ficha) {
 function tarjetaNuevoEstilo(cuantos) {
   return h('button', {
     clase: 'ficha-estilo nuevo', title: 'Crear un estilo nuevo',
-    onclick: () => irALight('crear'),
+    onclick: () => { APP.light.paraShorts = false; irALight('crear'); },
   },
     h('div', { clase: 'cara' }, h('span', { clase: 'mas' }, '+')),
     h('div', { clase: 'cuerpo' },
@@ -5467,62 +5517,257 @@ function filaVideoLista(video) {
     }, 'Apartar'));
 }
 
-/* LOS SHORTS: SU PROPIA CAJA. Se elige de qué vídeo sale y cuánto dura (15 a 60
-   s), y se crea: es el mismo `POST /short` que el botón de la pantalla del
-   vídeo, con el mismo material, voz y estilo, guion corto nuevo y vertical.
-   Debajo, los shorts ya hechos, separados de los vídeos normales por
-   `short_de`, que es de dónde salieron. */
+/* ======================================================= LA ZONA SHORTS
+ *
+ * Tres cajas, de arriba abajo, en el orden en que se usan:
+ *
+ *   Tus canales de shorts   estilos marcados como de shorts (y crear uno)
+ *   Nuevo short             tres formas: desde cero con un canal, desde un
+ *                           vídeo con guion nuevo, o un recorte GRATIS
+ *   Tus shorts              los proyectos-short y los recortes
+ */
 const SHORT_S = { minimo: 15, maximo: 60, paso: 5 };
 
-function seccionShortsLight(origenes) {
-  const caja = h('div', { clase: 'bloque-shorts' });
-  const shorts = videosLight().filter(v => v.short_de);
+const MODOS_SHORT = [
+  { id: 'cero', texto: 'Desde cero', pista: 'con un canal de shorts · se paga como un vídeo corto' },
+  { id: 'video', texto: 'De un vídeo', pista: 'mismo material, guion corto nuevo · ~1–2 $' },
+  { id: 'recorte', texto: 'Recorte gratis', pista: 'un trozo del vídeo ya montado · 0 $' },
+];
+
+function vistaShortsLight() {
+  const caja = h('div', { clase: 'zona-shorts' });
+  const l = APP.light;
+
+  // 1. LOS CANALES
+  const canales = presetsLight().filter(f => esCanalShort(f.id));
   caja.appendChild(h('div', { clase: 'light-cab' },
-    h('h2', {}, 'Shorts'),
-    h('span', { clase: 'meta' }, shorts.length
-      ? `${shorts.length} short${shorts.length === 1 ? '' : 's'}`
-      : 'vídeos verticales de 15 a 60 s sacados de tus vídeos')));
-  if (!origenes.length) {
-    caja.appendChild(h('div', { clase: 'pista' },
-      'Haz primero un vídeo: un short se saca de uno que ya exista.'));
-  } else {
-    const l = APP.light;
-    if (!origenes.some(v => v.id === l.shortOrigen)) l.shortOrigen = origenes[0].id;
-    if (!l.shortSegundos) l.shortSegundos = SHORT_S.maximo;
-    const etiqueta = h('b', {}, `${l.shortSegundos} s`);
-    caja.appendChild(h('div', { clase: 'fila' },
-      h('span', {}, 'De qué vídeo'),
-      h('select', {
-        onchange: ev => { l.shortOrigen = ev.target.value; },
-        value: l.shortOrigen,
-      }, origenes.map(v => h('option', { value: v.id }, v.nombre || v.id)))));
-    caja.appendChild(h('div', { clase: 'fila' },
-      h('span', {}, 'Duración'),
-      h('input', {
-        type: 'range', min: String(SHORT_S.minimo), max: String(SHORT_S.maximo),
-        step: String(SHORT_S.paso), value: String(l.shortSegundos),
-        oninput: ev => {
-          l.shortSegundos = Number(ev.target.value);
-          etiqueta.textContent = `${l.shortSegundos} s`;
-        },
-      }),
-      etiqueta));
-    caja.appendChild(h('div', { clase: 'fila' },
-      conAyuda('Crea un vídeo VERTICAL con el mismo material, voz y estilo, y un '
-        + 'guion corto nuevo: gancho en la primera frase y una sola idea. El '
-        + 'vídeo original no se toca. Al crearlo se abre, y lo generas como '
-        + 'cualquier otro (con su presupuesto delante).',
-        h('button', {
-          clase: 'primario', disabled: !!l.creandoShort,
-          onclick: () => crearShortLight(l.shortOrigen, l.shortSegundos),
-        }, l.creandoShort ? 'creando…' : 'Crear short'))));
-  }
-  if (shorts.length) {
+    h('h2', {}, 'Tus canales de shorts'),
+    h('span', { clase: 'meta' }, canales.length
+      ? `${canales.length} canal${canales.length === 1 ? '' : 'es'}`
+      : 'un estilo propio para tus shorts: dibujo, voz y tono')));
+  const rejilla = h('div', { clase: 'galeria-estilos' });
+  canales.forEach(ficha => rejilla.appendChild(tarjetaEstiloLight(ficha)));
+  rejilla.appendChild(h('button', {
+    clase: 'ficha-estilo nuevo', title: 'Crear un canal de shorts nuevo',
+    onclick: () => { l.paraShorts = true; irALight('crear'); },
+  },
+    h('div', { clase: 'cara' }, h('span', { clase: 'mas' }, '+')),
+    h('div', { clase: 'cuerpo' },
+      h('div', { clase: 'nombre' }, canales.length ? 'Otro canal' : 'Tu primer canal de shorts'),
+      h('div', { clase: 'pista' }, 'o pasa uno de tus estilos con «⋯ › Pasar a Shorts»'))));
+  caja.appendChild(rejilla);
+
+  // 2. NUEVO SHORT
+  if (!MODOS_SHORT.some(m => m.id === l.modoShort)) l.modoShort = 'recorte';
+  if (!l.shortSegundos) l.shortSegundos = SHORT_S.maximo;
+  const bloque = h('section', { clase: 'bloque-shorts' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, 'Nuevo short')));
+  const tira = h('div', { clase: 'tira-modos modos-short' });
+  MODOS_SHORT.forEach(m => tira.appendChild(h('button', {
+    clase: 'mini' + (m.id === l.modoShort ? ' activo' : ''), title: m.pista,
+    onclick: () => { l.modoShort = m.id; pintarLight(); },
+  }, m.texto)));
+  bloque.appendChild(tira);
+  bloque.appendChild(h('div', { clase: 'pista' },
+    (MODOS_SHORT.find(m => m.id === l.modoShort) || {}).pista || ''));
+  const normales = videosLight().filter(v => !esShortVideo(v));
+  if (l.modoShort === 'cero') bloque.appendChild(creadorShortCero(canales));
+  else if (l.modoShort === 'video') bloque.appendChild(creadorShortVideo(normales));
+  else bloque.appendChild(creadorRecorte(normales));
+  caja.appendChild(bloque);
+
+  // 3. TUS SHORTS
+  const proyectos = videosLight().filter(esShortVideo);
+  const recortes = shortsLight().recortes || [];
+  caja.appendChild(h('div', { clase: 'light-cab' },
+    h('h2', {}, 'Tus shorts'),
+    h('span', { clase: 'meta' }, (proyectos.length + recortes.length)
+      ? `${proyectos.length + recortes.length} en total` : 'todavía ninguno')));
+  if (proyectos.length) {
     const lista = h('div', { clase: 'videos-light' });
-    shorts.forEach(video => lista.appendChild(filaVideoLista(video)));
+    proyectos.forEach(video => lista.appendChild(filaVideoLista(video)));
+    caja.appendChild(lista);
+  }
+  if (recortes.length) {
+    caja.appendChild(h('div', { clase: 'meta sub-shorts' }, 'Recortes gratis'));
+    const lista = h('div', { clase: 'videos-light' });
+    recortes.forEach(r => lista.appendChild(filaRecorte(r)));
     caja.appendChild(lista);
   }
   return caja;
+}
+
+/* EL DESLIZADOR DE 15 A 60 S, compartido por los tres modos. */
+function deslizadorShort() {
+  const l = APP.light;
+  const etiqueta = h('b', {}, `${l.shortSegundos} s`);
+  return h('div', { clase: 'fila' },
+    h('span', {}, 'Duración'),
+    h('input', {
+      type: 'range', min: String(SHORT_S.minimo), max: String(SHORT_S.maximo),
+      step: String(SHORT_S.paso), value: String(l.shortSegundos),
+      oninput: ev => {
+        l.shortSegundos = Number(ev.target.value);
+        etiqueta.textContent = `${l.shortSegundos} s`;
+      },
+    }),
+    etiqueta);
+}
+
+function selectorVideoShort(videos, clave) {
+  const l = APP.light;
+  if (!videos.some(v => v.id === l[clave])) l[clave] = videos[0].id;
+  return h('div', { clase: 'fila' },
+    h('span', {}, 'De qué vídeo'),
+    h('select', {
+      onchange: ev => { l[clave] = ev.target.value; },
+      value: l[clave],
+    }, videos.map(v => h('option', { value: v.id }, v.nombre || v.id))));
+}
+
+/* DESDE CERO: se elige el canal y se abre su encargo, que con un canal de
+   shorts ya viene en vertical y de 15 a 60 s (ver `elegirEstiloLight`). */
+function creadorShortCero(canales) {
+  const caja = h('div', {});
+  if (!canales.length) {
+    caja.appendChild(h('div', { clase: 'pista' },
+      'Todavía no tienes ningún canal de shorts. Crea uno arriba, o pasa uno de '
+      + 'tus estilos con «⋯ › Pasar a Shorts» en la zona Vídeos.'));
+    return caja;
+  }
+  const botones = h('div', { clase: 'fila' });
+  canales.forEach(ficha => botones.appendChild(h('button', {
+    clase: 'primario', onclick: () => elegirEstiloLight(ficha),
+  }, `Short con «${ficha.nombre}»`)));
+  caja.appendChild(botones);
+  return caja;
+}
+
+/* DE UN VÍDEO: el mismo material, guion corto nuevo, vertical de verdad. */
+function creadorShortVideo(videos) {
+  const caja = h('div', {});
+  const l = APP.light;
+  if (!videos.length) {
+    caja.appendChild(h('div', { clase: 'pista' },
+      'Haz primero un vídeo en la zona Vídeos: un short se saca de uno que ya exista.'));
+    return caja;
+  }
+  caja.appendChild(selectorVideoShort(videos, 'shortOrigen'));
+  caja.appendChild(deslizadorShort());
+  caja.appendChild(h('div', { clase: 'fila' },
+    conAyuda('Crea un vídeo VERTICAL con el mismo material, voz y estilo, y un '
+      + 'guion corto nuevo: gancho en la primera frase y una sola idea. El '
+      + 'vídeo original no se toca. Al crearlo se abre, y lo generas como '
+      + 'cualquier otro (con su presupuesto delante).',
+      h('button', {
+        clase: 'primario', disabled: !!l.creandoShort,
+        onclick: () => crearShortLight(l.shortOrigen, l.shortSegundos),
+      }, l.creandoShort ? 'creando…' : 'Crear short'))));
+  return caja;
+}
+
+/* RECORTE GRATIS: un trozo del vídeo YA MONTADO, en vertical. Solo salen los
+   vídeos que tienen MP4 (sin montar no hay nada que recortar). */
+function creadorRecorte(videos) {
+  const caja = h('div', {});
+  const l = APP.light;
+  const montados = videos.filter(v => v.tiene_mp4 !== false);
+  if (!montados.length) {
+    caja.appendChild(h('div', { clase: 'pista' },
+      'Necesitas un vídeo ya montado: el recorte sale del MP4 que ya existe.'));
+    return caja;
+  }
+  if (!l.recorteEncuadre) l.recorteEncuadre = 'fondo';
+  if (!l.recorteTramo) l.recorteTramo = 'auto';
+  caja.appendChild(selectorVideoShort(montados, 'recorteOrigen'));
+  caja.appendChild(deslizadorShort());
+  const encuadres = h('div', { clase: 'tira-modos' });
+  [['fondo', 'Plano entero + fondo desenfocado'], ['centro', 'Pantalla completa (recorta los lados)']]
+    .forEach(([id, texto]) => encuadres.appendChild(h('button', {
+      clase: 'mini' + (l.recorteEncuadre === id ? ' activo' : ''),
+      onclick: () => { l.recorteEncuadre = id; pintarLight(); },
+    }, texto)));
+  caja.appendChild(h('div', { clase: 'fila' }, h('span', {}, 'Encuadre'), encuadres));
+  const tramos = h('div', { clase: 'tira-modos' });
+  [['auto', 'Que lo elija Claude'], ['manual', 'Desde un segundo']]
+    .forEach(([id, texto]) => tramos.appendChild(h('button', {
+      clase: 'mini' + (l.recorteTramo === id ? ' activo' : ''),
+      title: id === 'auto' ? 'Lee el guion y busca el tramo con mejor gancho que se '
+        + 'entienda solo. Va por tu suscripción de Claude: no cuesta dinero.' : '',
+      onclick: () => { l.recorteTramo = id; pintarLight(); },
+    }, texto)));
+  const inicio = h('input', {
+    type: 'number', min: '0', step: '1', clase: 'duracion-num',
+    value: String(l.recorteInicio || 0),
+    oninput: ev => { l.recorteInicio = Number(ev.target.value) || 0; },
+  });
+  caja.appendChild(h('div', { clase: 'fila' }, h('span', {}, 'Tramo'), tramos,
+    l.recorteTramo === 'manual' ? inicio : null,
+    l.recorteTramo === 'manual' ? h('span', { clase: 'meta' }, 's') : null));
+  caja.appendChild(h('div', { clase: 'fila' },
+    conAyuda('Corta siempre en el límite de un plano (nunca a mitad de frase) y '
+      + 'funde la música al final. No genera nada nuevo: 0 $.',
+      h('button', {
+        clase: 'primario', disabled: !!l.recortando,
+        onclick: () => sacarRecorteLight(),
+      }, l.recortando ? (l.recortandoMsg || 'recortando…') : 'Sacar short gratis'))));
+  return caja;
+}
+
+async function sacarRecorteLight() {
+  const l = APP.light;
+  const pid = l.recorteOrigen;
+  if (!pid) return;
+  l.recortando = true;
+  l.recortandoMsg = 'preparando…';
+  pintarLight();
+  try {
+    const cuerpo = { duracion_s: l.shortSegundos, encuadre: l.recorteEncuadre };
+    if (l.recorteTramo === 'manual') cuerpo.inicio_s = Number(l.recorteInicio) || 0;
+    const { trabajo_id: tid } = await pedir(API.recortes(pid), { method: 'POST', cuerpo });
+    // se sigue el trabajo hasta que acabe: Claude elige y ffmpeg corta, un minuto
+    for (;;) {
+      await new Promise(r => setTimeout(r, 2000));
+      const t = await pedir(API.trabajo(tid));
+      if (t.estado === 'listo') break;
+      if (t.estado === 'error' || t.estado === 'cancelado') {
+        throw new Error(t.error || t.mensaje || 'el recorte no ha salido');
+      }
+      l.recortandoMsg = t.mensaje || 'recortando…';
+      pintarLight();
+    }
+    toast('short gratis listo: está en «Tus shorts»');
+    await cargarGaleriaLight(true);
+  } catch (e) {
+    toast(`no se ha podido sacar el short: ${e.message}`, true);
+  } finally {
+    l.recortando = false;
+    pintarLight();
+  }
+}
+
+function filaRecorte(r) {
+  const url = API.archivo(r.pid, r.ruta);
+  return h('div', { clase: 'video-light' },
+    h('a', {
+      clase: 'abrir', href: url, target: '_blank', rel: 'noopener',
+      title: 'Verlo en otra pestaña',
+    },
+      h('span', { clase: 'nombre' }, r.titulo || 'Short'),
+      h('span', { clase: 'meta' },
+        `${Math.round(r.duracion || 0)} s · de «${r.video}» · `
+        + `${r.encuadre === 'centro' ? 'pantalla completa' : 'fondo desenfocado'}`)),
+    h('a', { clase: 'boton mini fantasma', href: url, download: '' }, 'Descargar'),
+    h('button', {
+      clase: 'mini fantasma peligro', title: 'Quitarlo (se puede volver a sacar gratis)',
+      onclick: async () => {
+        if (!confirm(`¿Quitar «${r.titulo || 'este short'}»? Se puede volver a sacar gratis.`)) return;
+        try {
+          await pedir(`${API.recortes(r.pid)}/${encodeURIComponent(r.id)}`, { method: 'DELETE' });
+          await cargarGaleriaLight(true);
+        } catch (e) { toast(e.message, true); }
+      },
+    }, 'Quitar'));
 }
 
 async function crearShortLight(pid, segundos) {
@@ -5602,9 +5847,16 @@ async function descartarTallerLight(taller) {
    es HTML válido y el clic acabaría eligiendo el estilo— y por eso la tarjeta es
    un div con un botón grande dentro. */
 function menuDeEstilo(ficha) {
+  const deShorts = esCanalShort(ficha.id);
   const menu = h('div', { clase: 'menu-estilo plegado' },
     h('button', { clase: 'mini fantasma', onclick: () => editarEstiloLight(ficha) }, 'Editar'),
-    h('button', { clase: 'mini fantasma', onclick: () => duplicarEstiloLight(ficha) }, 'Duplicar'));
+    h('button', { clase: 'mini fantasma', onclick: () => duplicarEstiloLight(ficha) }, 'Duplicar'),
+    h('button', {
+      clase: 'mini fantasma',
+      title: deShorts ? 'Devolverlo a los estilos de vídeos largos'
+        : 'Usarlo como canal de shorts: sus vídeos salen verticales y de 15 a 60 s',
+      onclick: () => marcarCanalShort(ficha, !deShorts),
+    }, deShorts ? 'Pasar a Vídeos' : 'Pasar a Shorts'));
   const puntos = h('button', {
     clase: 'puntos', title: 'Más opciones',
     onclick: ev => {
@@ -5660,6 +5912,18 @@ async function duplicarEstiloLight(ficha) {
    está tomada. */
 function elegirEstiloLight(ficha) {
   localStorage.setItem('estudio.light.estilo', ficha.id);
+  /* UN CANAL DE SHORTS ABRE UN ENCARGO DE SHORT: vertical y de 15 a 60 s, y el
+     vídeo se crea marcado (`short`) para que salga en «Tus shorts». Y al volver
+     a un estilo normal el encargo deja de serlo, o el siguiente vídeo largo
+     nacería vertical y de un minuto. */
+  const e = encargoVideoLight();
+  const esShort = esCanalShort(ficha.id);
+  if (esShort && !e.short) {
+    Object.assign(e, { short: true, formato: 'vertical',
+      duracion_objetivo_s: SHORT_S.maximo });
+  } else if (!esShort && e.short) {
+    Object.assign(e, { short: false, formato: 'horizontal', duracion_objetivo_s: 240 });
+  }
   // se empieza en el ENCARGO: elegir un estilo es el principio de un vídeo
   // nuevo. Si había uno a medias, la propia pantalla lo ofrece.
   APP.light.video.vista = 'encargo';
@@ -6161,18 +6425,23 @@ function formatoDelVideo() {
    que se está creando. */
 function duracionLight(e, estilo) {
   const linea = h('div', { clase: 'ritmo-linea' }, '…');
+  // UN SHORT VA DE 15 A 60 S; un vídeo, de 30 s a una hora
+  const r = e.short
+    ? { min: SHORT_S.minimo, max: SHORT_S.maximo, paso: SHORT_S.paso,
+        barraMin: SHORT_S.minimo, barraMax: SHORT_S.maximo }
+    : { min: 30, max: 3600, paso: 10, barraMin: 60, barraMax: 1800 };
   const numero = h('input', {
-    type: 'number', min: 30, max: 3600, step: 10, value: e.duracion_objetivo_s,
+    type: 'number', min: r.min, max: r.max, step: r.paso, value: e.duracion_objetivo_s,
     clase: 'duracion-num',
   });
   const barra = h('input', {
-    type: 'range', min: 60, max: 1800, step: 30, value: e.duracion_objetivo_s,
-    clase: 'ritmo',
+    type: 'range', min: r.barraMin, max: r.barraMax, step: e.short ? r.paso : 30,
+    value: e.duracion_objetivo_s, clase: 'ritmo',
   });
   const mover = valor => {
-    e.duracion_objetivo_s = Math.max(30, Math.round(Number(valor) || 0));
+    e.duracion_objetivo_s = Math.min(r.max, Math.max(r.min, Math.round(Number(valor) || 0)));
     numero.value = e.duracion_objetivo_s;
-    barra.value = Math.min(1800, Math.max(60, e.duracion_objetivo_s));
+    barra.value = Math.min(r.barraMax, Math.max(r.barraMin, e.duracion_objetivo_s));
     refrescarEstimacionLight(e, linea, estilo);
   };
   barra.addEventListener('input', () => mover(barra.value));
@@ -6312,11 +6581,13 @@ async function crearYGenerarLight(estilo) {
     const datos = await pedir(`${API.presetLight(estilo.id)}/video`, {
       method: 'POST',
       cuerpo: {
-        nombre: e.nombre || `Vídeo de ${estilo.nombre || estilo.id}`,
+        nombre: e.nombre || `${e.short ? 'Short' : 'Vídeo'} de ${estilo.nombre || estilo.id}`,
         duracion_objetivo_s: e.duracion_objetivo_s,
         formato: e.formato || 'horizontal',
         material: e.material,
         guion_propio: !!e.guion_propio,
+        // desde la zona Shorts con un canal de shorts: sale en «Tus shorts»
+        short: !!e.short,
         indicaciones: e.indicaciones,
         cta: e.cta,
       },
@@ -6413,6 +6684,8 @@ function pedidoDelVideoLight() {
     guion_propio: !!params('guion').guion_propio,
     indicaciones: String(params('guion').prompt_general || ''),
     cta: ctaLeida(params('guion').cta),
+    // un short se sigue editando como short: su duración va de 15 a 60 s
+    short: esShortVideo(videosLight().find(x => x.id === v.pid)),
   };
   v.pedido = {
     pid: v.pid,
@@ -9637,6 +9910,15 @@ async function alTerminarLight(datos) {
     if (ficha) { await regenerarParteLight(ficha, cola[0]); return; }
   }
   APP.light.cola = [];
+  // UN CANAL CREADO DESDE LA ZONA SHORTS nace marcado: se pidió como canal de
+  // shorts, y encontrarlo luego entre los estilos de vídeos largos sería raro
+  if ((datos || {}).estado === 'listo' && APP.light.paraShorts && nuevo) {
+    try {
+      await pedir(API.canalShort(nuevo), { method: 'PUT', cuerpo: { shorts: true } });
+      await cargarGaleriaLight(true);
+    } catch (e) { toast(`no se ha podido marcar como canal de shorts: ${e.message}`, true); }
+  }
+  if ((datos || {}).estado === 'listo') APP.light.paraShorts = false;
   if ((datos || {}).estado === 'listo') {
     APP.light.encargo = null;      // el formulario ya no vale para nada
     // A LA MISMA PANTALLA que si lo estuvieras editando, que es la gracia:

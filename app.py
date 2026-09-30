@@ -32,6 +32,7 @@ Interfaz     web/ se sirve en la raiz del mismo origen, asi que abrir
 import argparse
 import asyncio
 import copy
+import glob
 import hashlib
 import inspect
 import json
@@ -858,6 +859,13 @@ def listar_proyectos():
             "estilo_light": ficha.get(CONFIG_ESTILO_LIGHT) or "",
             # de que video salio, si es un short: la pantalla los separa
             "short_de": ficha.get(CONFIG_SHORT_DE) or "",
+            # un short hecho DESDE CERO con un canal de shorts no sale de
+            # ningun video, pero tambien es un short
+            "short": bool(ficha.get(CONFIG_SHORT) or ficha.get(CONFIG_SHORT_DE)),
+            # si ya hay MP4 montado: es de lo unico que se puede sacar un
+            # recorte gratis. Se mira el disco, no el estado (que es caro).
+            "tiene_mp4": bool(ficha.get("raiz") and glob.glob(os.path.join(
+                ficha["raiz"], "pasos", "render", "v*", "video.mp4"))),
         })
     return {"proyectos": fichas, "raiz": raiz_proyectos()}
 
@@ -967,6 +975,8 @@ TOLERANCIA_SHORT = 0.10
 #: En la config del short: de que video salio. Es lo que lo separa de los
 #: videos normales en la pantalla y lo que dice de donde viene.
 CONFIG_SHORT_DE = "short_de"
+#: Y la marca de un short hecho desde cero con un canal de shorts.
+CONFIG_SHORT = "short"
 
 #: Lo que se le anade al brief. Un short NO es el video largo recortado: pide
 #: su propio guion, con el gancho en la primera frase y una sola idea.
@@ -1035,6 +1045,106 @@ def hacer_short(pid: str, cuerpo: dict = Body(default=None)):
     return {"proyecto": ficha_proyecto(destino), "copia_de": ctx.id,
             "segundos": segundos,
             "pasos": [ficha_paso(destino, p["id"]) for p in PASOS]}
+
+
+def _shorts():
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return PASOS_MODULOS.shorts
+
+
+@app.get("/api/shorts")
+def zona_shorts():
+    """Lo que ensena la zona Shorts: que estilos son canales de shorts y los
+    recortes gratis de todos los videos (los shorts que son proyectos ya salen
+    en /api/proyectos, marcados con `short`)."""
+    mod = _shorts()
+    recortes = []
+    base = raiz_proyectos()
+    for nombre in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+        if nombre.startswith("_") or not os.path.isfile(
+                os.path.join(base, nombre, "proyecto.json")):
+            continue
+        carpeta = os.path.join(base, nombre, mod.CARPETA_RECORTES)
+        if not os.path.isdir(carpeta):
+            continue
+        ctx = contexto(nombre)
+        for ficha in mod.recortes(ctx.proyecto):
+            recortes.append(dict(ficha, pid=ctx.id,
+                                 video=ctx.proyecto.config.get("nombre") or ctx.id))
+    recortes.sort(key=lambda r: str(r.get("creado") or ""), reverse=True)
+    return {"canales": mod.canales(), "recortes": recortes,
+            "duracion": list(mod.DURACION_S), "encuadres": mod.ENCUADRES}
+
+
+@app.put("/api/shorts/canales/{preset_id}")
+def marcar_canal_short(preset_id: str, cuerpo: dict = Body(default=None)):
+    """Marca (o desmarca con {"shorts": false}) un estilo como canal de shorts."""
+    datos = _cuerpo(cuerpo)
+    try:
+        lista = _shorts().marcar_canal(preset_id, datos.get("shorts", True) is not False)
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+    return {"canales": lista}
+
+
+@app.post("/api/proyectos/{pid}/recortes", status_code=202)
+def lanzar_recorte(pid: str, cuerpo: dict = Body(default=None)):
+    """Un short GRATIS: un trozo del video montado, en vertical. -> trabajo.
+
+    {duracion_s: 15-60, encuadre: "fondo"|"centro", inicio_s: opcional}. Sin
+    `inicio_s` el tramo lo elige Claude (va por la suscripcion, no suma gasto).
+    """
+    ctx = contexto(pid)
+    mod = _shorts()
+    datos = _cuerpo(cuerpo)
+    try:
+        segundos = int(datos.get("duracion_s") or 60)
+    except (TypeError, ValueError):
+        raise ErrorApi(400, "'duracion_s' tiene que ser un numero de segundos")
+    minimo, maximo = mod.DURACION_S
+    if not minimo <= segundos <= maximo:
+        raise ErrorApi(400, f"un short dura entre {minimo} y {maximo} segundos")
+    encuadre = str(datos.get("encuadre") or "fondo")
+    if encuadre not in mod.ENCUADRES:
+        raise ErrorApi(400, f"encuadre desconocido: {encuadre}. Son: "
+                            f"{', '.join(mod.ENCUADRES)}")
+    inicio = datos.get("inicio_s")
+    if inicio not in (None, ""):
+        try:
+            inicio = max(0.0, float(inicio))
+        except (TypeError, ValueError):
+            raise ErrorApi(400, "'inicio_s' tiene que ser un numero de segundos")
+    else:
+        inicio = None
+    if not PASOS_MODULOS.medios.salida_de(ctx.proyecto, "render", claves=("mp4",),
+                                          patrones=(r"video\.mp4",)):
+        raise ErrorApi(409, "este video todavia no esta montado: genera el video "
+                            "antes de sacarle un short")
+
+    def correr(avisar):
+        ficha = mod.hacer_recorte(ctx.proyecto, segundos, encuadre=encuadre,
+                                  inicio_s=inicio, avisar=avisar,
+                                  cwd=ctx.proyecto.raiz)
+        ctx.bitacora.anotar("recorte_short", None, {
+            "id": ficha["id"], "desde": ficha["desde"], "hasta": ficha["hasta"],
+            "encuadre": encuadre, "elegido_por": ficha["elegido_por"]})
+        return ficha
+
+    trabajo_id = ctx.gestor.lanzar("recorte", correr)
+    _registrar_trabajo(trabajo_id, ctx.id)
+    return {"trabajo_id": trabajo_id}
+
+
+@app.delete("/api/proyectos/{pid}/recortes/{rid}")
+def borrar_recorte(pid: str, rid: str):
+    """Quita un recorte. No cuesta nada volver a sacarlo."""
+    ctx = contexto(pid)
+    try:
+        _shorts().borrar_recorte(ctx.proyecto, rid)
+    except KeyError:
+        raise ErrorApi(404, f"no hay ningun recorte '{rid}' en este video")
+    return {"recortes": _shorts().recortes(ctx.proyecto)}
 
 
 # -------------------------------------------------------------- la papelera
@@ -9107,6 +9217,15 @@ def crear_video_light(preset_id: str, cuerpo: dict = Body(default=None)):
                             f"'{ficha_preset.get('tipo')}': el modo light hace "
                             f"videos con estilos de canal")
 
+    if datos.get("short"):
+        try:
+            segundos = int(datos.get("duracion_objetivo_s") or 0)
+        except (TypeError, ValueError):
+            segundos = 0
+        minimo, maximo = DURACION_SHORT_S
+        if not minimo <= segundos <= maximo:
+            raise ErrorApi(400, f"un short dura entre {minimo} y {maximo} segundos")
+
     nombre = str(datos.get("nombre") or "").strip()
     if not nombre:
         nombre = f"Vídeo de {ficha_preset.get('nombre') or preset_id}"
@@ -9124,12 +9243,22 @@ def crear_video_light(preset_id: str, cuerpo: dict = Body(default=None)):
     ctx = contexto(proyecto.id)
     ctx.proyecto.config[CONFIG_VIDEO_LIGHT] = True
     ctx.proyecto.config[CONFIG_ESTILO_LIGHT] = preset_id
+    # UN SHORT DESDE CERO: lo crea la zona Shorts con un canal de shorts. Va a
+    # la lista de shorts, y su brief lleva el margen corto (ver TOLERANCIA_SHORT)
+    es_short = bool(datos.get("short"))
+    if es_short:
+        ctx.proyecto.config[CONFIG_SHORT] = True
     ctx.proyecto.guardar_config()
 
     # EL ESTILO, con el mismo codigo que el boton del modo editor. Un segundo
     # camino que copiara las claves a mano se quedaria viejo el dia que un
     # preset guarde una mas.
     aplicado = aplicar_preset_canal(proyecto.id, preset_id)
+    if es_short:
+        # el formato y la duracion los manda la pantalla (15-60 s, vertical);
+        # esto solo estrecha el margen, que el estilo no sabe que es un short
+        datos = dict(datos, formato="vertical")
+        ctx.estado.actualizar_params("brief", {"tolerancia": TOLERANCIA_SHORT})
     avisos = _sembrar_video_light(ctx, datos)
     ctx.bitacora.anotar("video_light_creado", None, {
         "preset": preset_id, "estilo": ficha_preset.get("nombre"),

@@ -1871,7 +1871,18 @@ button.primario.grande { padding: 9px 18px; font-size: 14px; }
 .videos-light { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
 /* La caja de los shorts: el creador (de que video, cuanto dura) y debajo los
    shorts ya hechos, con la misma fila que «Tus vídeos». */
-.bloque-shorts { margin-top: 18px; }
+.bloque-shorts {
+  margin: 18px 0; padding: 14px 16px; border-radius: 10px;
+  border: 1px solid var(--linea); background: var(--panel);
+}
+.bloque-shorts .light-cab { margin-top: 0; }
+.bloque-shorts .modos-short { margin-bottom: 6px; }
+.bloque-shorts .fila .tira-modos { flex-wrap: wrap; }
+/* El interruptor de zona, arriba del todo y centrado: es lo primero que se
+   decide en la portada, antes que el estilo. */
+.tira-modos.zonas { justify-content: center; margin: 4px 0 14px; }
+.tira-modos.zonas button { min-width: 120px; font-size: 15px; padding: 8px 18px; }
+.zona-shorts .sub-shorts { margin: 10px 0 4px; }
 .bloque-shorts .fila { margin-bottom: 8px; }
 .bloque-shorts .fila > span:first-child { min-width: 110px; }
 .bloque-shorts select { max-width: 100%; }
