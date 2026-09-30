@@ -1394,7 +1394,9 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
             "corte": {k: v for k, v in (cortes.get(sid) or {}).items()},
             "pagina_trans": pagina_trans,
             "conservar_frames": bool(p["conservar_frames"])})
-        if modo_veo and animar.motivo_para_no_animar(escena, svg) is None:
+        # el primer plano es el gancho: se anima aunque lleve texto
+        if modo_veo and animar.motivo_para_no_animar(
+                escena, svg, primero=indice == 0) is None:
             candidatos_veo.append((tareas[-1], escena, hyper, mov))
 
     # QUIEN TIENE QUE ESPERAR A QUIEN. La transicion de un plano se cuece sobre

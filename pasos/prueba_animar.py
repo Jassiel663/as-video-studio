@@ -102,6 +102,26 @@ comprobar("una capa SVG con algo visible: no",
 igual("una capa SVG vacia no molesta",
       animar.motivo_para_no_animar(escena(), '<svg xmlns="x"><defs></defs></svg>'), None)
 
+print("\n== el primer plano: el gancho se anima aunque lleve texto ==")
+con_letras = escena(direccion='A banner reading "Deposito recibido" slides in.')
+igual("el primero con texto SI se anima",
+      animar.motivo_para_no_animar(con_letras, primero=True), None)
+comprobar("el mismo plano en otra posicion, no",
+          animar.motivo_para_no_animar(con_letras) is not None)
+comprobar("el primero de mas de 8 s sigue sin caber",
+          animar.motivo_para_no_animar(escena(t_out=9.5), primero=True) is not None)
+comprobar("el primero con capa grafica encima tampoco",
+          animar.motivo_para_no_animar(escena(), '<svg><text>Hola</text></svg>',
+                                       primero=True) is not None)
+comprobar("a Veo se le pide dejar el texto quieto y legible",
+          "stays EXACTLY as drawn" in animar.prompt_de(con_letras))
+comprobar("y sin pedirle que quite las letras",
+          ", text," not in animar.negativo_de(con_letras)
+          and "garbled letters" in animar.negativo_de(con_letras))
+igual("un plano sin texto sigue con el negativo de siempre (sus clips valen)",
+      animar.negativo_de(escena()), animar.NEGATIVO)
+comprobar("y su prompt no cambia", "stays EXACTLY" not in animar.prompt_de(escena()))
+
 print("\n== el prompt: lo que pasa y como se mueve ==")
 prompt = animar.prompt_de(escena())
 comprobar("lleva la direccion del plano", "calm harbour" in prompt)
@@ -118,6 +138,9 @@ igual("apagado no cuesta nada", animar.prevision(plan, ""),
       {"clips": 0, "segundos": 0, "usd": 0.0})
 fast = animar.prevision(plan, "fast")
 igual("fast: dos clips (el del cartel no)", fast["clips"], 2)
+con_gancho = [escena("S001", 0, 2.6, direccion='A sign reading "OPEN".')] + plan[1:]
+igual("el primero con texto tambien cuenta en la prevision",
+      animar.prevision(con_gancho, "fast")["clips"], 2)
 igual("fast: 4 + 6 segundos pagados", fast["segundos"], 10)
 igual("fast: 10 s a 0,10 $", fast["usd"], 1.0)
 igual("lite: la mitad", animar.prevision(plan, "lite")["usd"], 0.5)

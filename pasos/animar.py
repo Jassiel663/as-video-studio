@@ -72,6 +72,17 @@ ESTILO = ("Keep EXACTLY the illustrated style of the image: same line work, "
           "frame, do not redraw it, do not cut to another shot. ")
 NEGATIVO = ("photorealistic, style change, morphing, text, letters, subtitles, "
             "watermark, extra limbs, extra fingers, flicker, scene cut")
+#: El del primer plano CON texto: pedir «sin letras» ahi es pedir que las borre.
+NEGATIVO_CON_TEXTO = ("photorealistic, style change, morphing, warped text, "
+                      "garbled letters, changing numbers, new text, watermark, "
+                      "extra limbs, extra fingers, flicker, scene cut")
+TEXTO_QUIETO = ("Every piece of on-screen text, number and sign stays EXACTLY as "
+                "drawn: same words, same digits, fully legible, not moving, not "
+                "morphing. Animate only the characters, objects and camera around it. ")
+
+
+def negativo_de(escena):
+    return NEGATIVO_CON_TEXTO if lleva_texto(escena) else NEGATIVO
 
 
 def modo_de(params):
@@ -80,12 +91,33 @@ def modo_de(params):
     return valor if valor in MODOS else ""
 
 
-def motivo_para_no_animar(escena, capa_svg=""):
-    """Por que este plano NO se anima, o None si se puede animar. -> str|None"""
+def lleva_texto(escena):
+    """Si el plano lleva letras dibujadas, cartela o superficies con texto."""
+    direccion = str(escena.get("direccion") or "")
+    return bool(_COMILLAS.search(direccion)
+                or escena.get("cartela")
+                or str(escena.get("carta") or "").lower() in ("cifra", "cartela")
+                or _SUPERFICIES.search(" ".join(str(escena.get(k) or "")
+                                                for k in ("direccion", "accion"))))
+
+
+def motivo_para_no_animar(escena, capa_svg="", primero=False):
+    """Por que este plano NO se anima, o None si se puede animar. -> str|None
+
+    EL PRIMER PLANO SE ANIMA AUNQUE LLEVE TEXTO (lo pidio el canal el
+    30-09-2026): es el gancho, lo que se ve en el segundo cero. Veo recibe
+    entonces la orden de dejar el texto quieto y legible (ver `prompt_de`), y
+    sigue sin animarse si no cabe en un clip o lleva capa grafica encima, que
+    con el clip debajo dejaria de cuadrar.
+    """
     duracion = float(escena.get("t_out") or 0) - float(escena.get("t_in") or 0)
     veo = medios.motor("video_veo/veo.py")
     if veo.duracion_de_clip(duracion)[0] is None:
         return f"dura {duracion:.1f} s y un clip de Veo llega a 8"
+    if primero:
+        if escena.get("capa_vectorial") or (capa_svg and _VISIBLE_SVG.search(capa_svg)):
+            return "lleva capa grafica encima"
+        return None
     direccion = str(escena.get("direccion") or "")
     if _COMILLAS.search(direccion):
         return "lleva texto dibujado"
@@ -112,8 +144,8 @@ def prevision(escenas, modo):
         return {"clips": 0, "segundos": 0, "usd": 0.0}
     veo = medios.motor("video_veo/veo.py")
     clips, segundos, usd = 0, 0, 0.0
-    for escena in escenas or []:
-        if motivo_para_no_animar(escena) is not None:
+    for indice, escena in enumerate(escenas or []):
+        if motivo_para_no_animar(escena, primero=indice == 0) is not None:
             continue
         duracion = float(escena["t_out"]) - float(escena["t_in"])
         pedidos, resolucion = veo.duracion_de_clip(duracion)
@@ -137,6 +169,8 @@ def _movimiento_de(escena):
 def prompt_de(escena):
     """Lo que se le pide a Veo para este plano: lo que pasa, y como se mueve."""
     partes = [ESTILO]
+    if lleva_texto(escena):
+        partes.append(TEXTO_QUIETO)
     for clave in ("direccion", "accion"):
         texto = " ".join(str(escena.get(clave) or "").split())
         if texto:
@@ -202,7 +236,8 @@ def clip(proyecto, escena, hyper, ancho, alto, modo, ventana=None, avisar=None,
     prompt = prompt_de(escena)
     with open(entrada, "rb") as fh:
         huella = hashlib.sha1(fh.read())
-    for trozo in (prompt, NEGATIVO, veo.MODELOS[modo], str(segundos), resolucion,
+    negativo = negativo_de(escena)
+    for trozo in (prompt, negativo, veo.MODELOS[modo], str(segundos), resolucion,
                   str(VERSION)):
         huella.update(b"\0" + trozo.encode("utf-8"))
     destino = os.path.join(carpeta, f"{escena['id']}_{huella.hexdigest()[:16]}.mp4")
@@ -214,7 +249,7 @@ def clip(proyecto, escena, hyper, ancho, alto, modo, ventana=None, avisar=None,
     mp4, meta = veo.generar(entrada, prompt, modo=modo, segundos=segundos,
                             resolucion=resolucion,
                             aspecto="9:16" if alto > ancho else "16:9",
-                            negativo=NEGATIVO, avisar=avisar)
+                            negativo=negativo, avisar=avisar)
     temporal = destino + ".parcial"
     with open(temporal, "wb") as fh:
         fh.write(mp4)
