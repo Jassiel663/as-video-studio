@@ -7954,6 +7954,12 @@ function vistaPreviaLight() {
      del texto de encima. */
   engancharSwipePrevia(marco);
   caja.appendChild(marco);
+  /* «PLANOS EN MOVIMIENTO» TAMBIÉN AQUÍ. Vivía solo en la pantalla del vídeo,
+     y esa pestaña no se abre hasta que hay un montaje: en un vídeo nuevo el
+     selector era inalcanzable justo cuando hacía falta, antes del primer
+     «Generar Vídeo» (30-09-2026). Es el mismo nodo vivo, así que las dos
+     pantallas dicen lo mismo. */
+  caja.appendChild(enVivo(filaVideoIaLight));
 
   /* LOS MANDOS. La flecha derecha es el gesto principal —pasar de escena y
      oírla— así que va grande y también en el teclado. */
