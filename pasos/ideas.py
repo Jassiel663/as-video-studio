@@ -50,10 +50,11 @@ EL CANAL
 - Nombre del estilo: {nombre}
 - Idioma de los videos: {idioma}
 - Como habla (tono): {tono}
+- Guia de guion del canal: {guia}
 - Como se ve: {estetica}
 - Videos ya hechos: {hechos}
 {enfoque}
-Si no queda claro de que TEMA va el canal (un estilo nuevo sin videos solo dice como habla y como se ve), NO te niegues ni pidas mas datos: deduce el nicho mas probable por el nombre, el tono y la estetica, dilo en una frase al principio del resumen, y haz el estudio de ese nicho.
+REGLA: contesta SIEMPRE con el JSON, nunca con preguntas. Si no queda claro de que TEMA va el canal (un estilo nuevo sin videos solo dice como habla y como se ve), deduce el nicho mas probable por el NOMBRE (p. ej. «si lo sabias» = datos y curiosidades sorprendentes), el tono y la guia; si aun asi no hay pista, toma «curiosidades y datos sorprendentes» como nicho. Dilo en una frase al principio del resumen y haz el estudio de ese nicho.
 
 QUE QUIERO, buscando de verdad (cita lo que encuentres, no inventes cifras):
 1. EL NICHO: de que va este tipo de canal, quien lo ve, que formatos y temas \
@@ -114,6 +115,8 @@ def _ficha_del_canal(preset, hechos):
         "nombre": preset.get("nombre") or preset.get("id"),
         "idioma": _NOMBRES_IDIOMA.get(idioma, idioma),
         "tono": tono or "(sin describir)",
+        "guia": " ".join(str(guion.get("instrucciones") or "").split())[:1500]
+                or "(sin guia)",
         "estetica": estetica or "(sin describir)",
         "hechos": "; ".join(hechos[:25]) or "ninguno todavia",
     }
