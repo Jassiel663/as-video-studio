@@ -117,6 +117,35 @@ def _ficha_del_canal(preset, hechos):
     }
 
 
+def _leer_respuesta(texto):
+    """El JSON de la respuesta con sus ideas, o None. Prueba el objeto entero y,
+    si no vale, cada objeto que empiece por una llave (el ultimo primero)."""
+    texto = str(texto or "")
+    candidatos = []
+    encaje = re.search(r"\{.*\}", texto, re.S)
+    if encaje:
+        candidatos.append(encaje.group(0))
+    for inicio in reversed([m.start() for m in re.finditer(r"\{", texto)][:200]):
+        candidatos.append(texto[inicio:texto.rfind("}") + 1])
+    for crudo in candidatos:
+        try:
+            datos = json.loads(crudo)
+        except ValueError:
+            continue
+        if not isinstance(datos, dict):
+            continue
+        lista = datos.get("ideas")
+        if not isinstance(lista, list):
+            lista = next((v for v in datos.values() if isinstance(v, list) and v
+                          and isinstance(v[0], dict) and "titulo" in v[0]), None)
+        ideas = [i for i in lista or [] if isinstance(i, dict)
+                 and str(i.get("titulo") or "").strip()]
+        if ideas:
+            datos["ideas"] = ideas
+            return datos
+    return None
+
+
 def estudiar(estilo_id, hechos=(), enfoque="", cuantas=8):
     """Lanza el estudio en un hilo. -> lo que hay guardado (estado pensando).
 
@@ -142,18 +171,29 @@ def estudiar(estilo_id, hechos=(), enfoque="", cuantas=8):
     def correr():
         arranque = time.time()
         try:
-            texto, _ = cli_claude.ejecutar(
-                instruccion, modelo="sonnet", esfuerzo="medium",
-                cwd=tempfile.gettempdir(), tiempo_max_s=TIEMPO_MAX_S,
-                herramientas_vetadas=VETADAS, herramientas_permitidas=SOLO_WEB,
-                extra=["--no-session-persistence"],
-                para=f"estudiar el nicho de «{ficha['nombre']}»")
-            encaje = re.search(r"\{.*\}", texto or "", re.S)
-            datos = json.loads(encaje.group(0)) if encaje else None
-            if not isinstance(datos, dict) or not datos.get("ideas"):
-                raise ValueError("la respuesta no trae ideas")
-            ideas = [i for i in datos.get("ideas") or [] if isinstance(i, dict)
-                     and str(i.get("titulo") or "").strip()]
+            # DOS INTENTOS. Con busquedas de por medio, a veces la respuesta
+            # final es un resumen en prosa y el JSON se queda en un paso
+            # anterior (medido el 01-10-2026: 1 de 3 estilos). El segundo
+            # intento lo recuerda de forma explicita.
+            datos, ultimo = None, ""
+            for intento in range(2):
+                pedido = instruccion if not intento else (
+                    instruccion + "\nIMPORTANTE: tu mensaje final debe ser UNICAMENTE "
+                                  "el JSON pedido, completo, sin texto antes ni despues.")
+                texto, _ = cli_claude.ejecutar(
+                    pedido, modelo="sonnet", esfuerzo="medium",
+                    cwd=tempfile.gettempdir(), tiempo_max_s=TIEMPO_MAX_S,
+                    herramientas_vetadas=VETADAS, herramientas_permitidas=SOLO_WEB,
+                    extra=["--no-session-persistence"],
+                    para=f"estudiar el nicho de «{ficha['nombre']}»")
+                ultimo = texto or ""
+                datos = _leer_respuesta(ultimo)
+                if datos:
+                    break
+            if not datos:
+                raise ValueError("la respuesta no trae ideas: "
+                                 + " ".join(ultimo.split())[:160])
+            ideas = datos["ideas"]
             _guardar(estilo_id, {
                 "estado": "listo", "fecha": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "segundos": round(time.time() - arranque),

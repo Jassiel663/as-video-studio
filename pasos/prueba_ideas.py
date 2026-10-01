@@ -78,6 +78,19 @@ try:
               {"Bash", "Read", "Write"} <= set(kw.get("herramientas_vetadas") or ())
               and "WebSearch" not in (kw.get("herramientas_vetadas") or ()))
 
+    print("\n== si contesta en prosa, se le vuelve a pedir el JSON ==")
+    respuestas = ["Aqui tienes el analisis: el nicho va bien.", claude_bueno("")[0]]
+    pedidos = []
+
+    def claude_prosa(instruccion, **kw):
+        pedidos.append(instruccion)
+        return respuestas[len(pedidos) - 1], {}
+    cli_claude.ejecutar = claude_prosa
+    ideas.estudiar("pr1")
+    d = esperar("pr1")
+    comprobar("al segundo intento sale bien", d.get("estado") == "listo" and len(pedidos) == 2, d)
+    comprobar("y el segundo lo pide de forma explicita", "UNICAMENTE" in pedidos[1])
+
     print("\n== un fallo ==")
 
     def claude_roto(instruccion, **kw):
