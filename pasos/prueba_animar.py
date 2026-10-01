@@ -146,6 +146,39 @@ igual("fast: 4 + 6 segundos pagados", fast["segundos"], 10)
 igual("fast: 10 s a 0,10 $", fast["usd"], 1.0)
 igual("lite: la mitad", animar.prevision(plan, "lite")["usd"], 0.5)
 
+print("\n== cuantos planos: de solo el primero a todos ==")
+igual("sin ponerlo es sin_texto, lo de siempre", animar.alcance_de({}), "sin_texto")
+igual("un valor raro tambien", animar.alcance_de({"video_ia_planos": "muchos"}),
+      "sin_texto")
+igual("y lo bien escrito se respeta", animar.alcance_de({"video_ia_planos": " TODOS "}),
+      "todos")
+texto = escena(direccion='A poster reading "SALE".')
+comprobar("solo el primero: un plano limpio en otra posicion NO",
+          animar.motivo_para_no_animar(escena(), alcance="primero", indice=3) is not None)
+igual("solo el primero: el primero si",
+      animar.motivo_para_no_animar(escena(), primero=True, alcance="primero"), None)
+comprobar("mitad: uno con texto en posicion impar sigue quieto",
+          animar.motivo_para_no_animar(texto, alcance="mitad", indice=3) is not None)
+igual("mitad: en posicion par se anima",
+      animar.motivo_para_no_animar(texto, alcance="mitad", indice=4), None)
+igual("mitad: los sin texto se animan todos, pares o impares",
+      animar.motivo_para_no_animar(escena(), alcance="mitad", indice=3), None)
+igual("todos: tambien el de texto",
+      animar.motivo_para_no_animar(texto, alcance="todos", indice=3), None)
+comprobar("todos: pero no el que lleva capa grafica encima",
+          animar.motivo_para_no_animar(escena(), '<svg><text>Hola</text></svg>',
+                                       alcance="todos", indice=3) is not None)
+comprobar("todos: ni el que no cabe en un clip",
+          animar.motivo_para_no_animar(escena(t_out=9.5), alcance="todos") is not None)
+largo = [escena(f"S{i:03d}", i * 3.0, i * 3.0 + 3.0,
+                direccion=('A sign reading "OPEN".' if i % 3 else "A quiet field."))
+         for i in range(12)]
+cuentas = [animar.prevision(largo, "lite", a)["clips"] for a in animar.ALCANCES]
+igual("cada escalon anima lo del anterior y mas (12 planos)", cuentas, [1, 4, 8, 12])
+comprobar("y cuesta mas en el mismo orden",
+          [animar.prevision(largo, "lite", a)["usd"] for a in animar.ALCANCES]
+          == sorted(animar.prevision(largo, "lite", a)["usd"] for a in animar.ALCANCES))
+
 print("\n== el fotograma de partida ==")
 try:
     from PIL import Image

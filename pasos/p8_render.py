@@ -1373,6 +1373,7 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
     # LOS PLANOS SIN TEXTO QUE SE ANIMAN CON VEO, si el render lo pide. Apagado
     # (lo normal) esta lista se queda vacia y el render es el de siempre.
     modo_veo = "" if solo_montar else animar.modo_de(params)
+    alcance_veo = animar.alcance_de(params)
     candidatos_veo = []
     for indice, escena in enumerate(escenas):
         sid = escena["id"]
@@ -1442,7 +1443,8 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
             "conservar_frames": bool(p["conservar_frames"])})
         # el primer plano es el gancho: se anima aunque lleve texto
         if modo_veo and animar.motivo_para_no_animar(
-                escena, svg, primero=indice == 0) is None:
+                escena, svg, primero=indice == 0, alcance=alcance_veo,
+                indice=indice) is None:
             tareas[-1]["primero"] = indice == 0
             candidatos_veo.append((tareas[-1], escena, hyper, mov))
 

@@ -47,6 +47,23 @@ import medios
 PARAM = "video_ia"
 MODOS = ("", "lite", "fast")
 
+#: QUE PLANOS SE ANIMAN, de menos a mas (param `video_ia_planos` del render).
+#: Sin ponerlo es "sin_texto", lo de siempre: un proyecto que no lo toca sigue
+#: con su firma y su video. Cada escalon anima todo lo del anterior y mas.
+#:
+#:   primero    solo el gancho, el primer plano
+#:   sin_texto  el primero y los que no llevan texto (Veo deforma las letras)
+#:   mitad      ademas, uno de cada dos de los que llevan texto
+#:   todos      todos los que caben: tambien con texto, pidiendo que se quede
+#:              quieto y legible (TEXTO_QUIETO, y Veo Fast si va por fal)
+#:
+#: En TODOS siguen quietos los que no caben en un clip y los que llevan una
+#: capa grafica encima (flechas, recuadros): esa capa apunta a sitios de la
+#: imagen, y con la imagen moviendose dejaria de apuntar a nada.
+PARAM_PLANOS = "video_ia_planos"
+ALCANCES = ("primero", "sin_texto", "mitad", "todos")
+ALCANCE_DE_FABRICA = "sin_texto"
+
 #: Sube si cambia la forma de pedir el clip (prompt, recorte): los clips de la
 #: version anterior dejan de valer y se piden otra vez.
 VERSION = 1
@@ -99,6 +116,12 @@ def modo_de(params):
     return valor if valor in MODOS else ""
 
 
+def alcance_de(params):
+    """Que planos se animan, normalizado. -> uno de ALCANCES"""
+    valor = str((params or {}).get(PARAM_PLANOS) or "").strip().lower()
+    return valor if valor in ALCANCES else ALCANCE_DE_FABRICA
+
+
 def lleva_texto(escena):
     """Si el plano lleva letras dibujadas, cartela o superficies con texto."""
     direccion = str(escena.get("direccion") or "")
@@ -109,7 +132,8 @@ def lleva_texto(escena):
                                                 for k in ("direccion", "accion"))))
 
 
-def motivo_para_no_animar(escena, capa_svg="", primero=False):
+def motivo_para_no_animar(escena, capa_svg="", primero=False,
+                          alcance=ALCANCE_DE_FABRICA, indice=None):
     """Por que este plano NO se anima, o None si se puede animar. -> str|None
 
     EL PRIMER PLANO SE ANIMA AUNQUE LLEVE TEXTO (lo pidio el canal el
@@ -117,15 +141,25 @@ def motivo_para_no_animar(escena, capa_svg="", primero=False):
     entonces la orden de dejar el texto quieto y legible (ver `prompt_de`), y
     sigue sin animarse si no cabe en un clip o lleva capa grafica encima, que
     con el clip debajo dejaria de cuadrar.
+
+    `alcance` es cuantos planos se piden (ver ALCANCES) e `indice` la posicion
+    del plano en el video, que es lo que reparte la MITAD: uno de cada dos de
+    los que llevan texto, los de posicion par.
     """
     duracion = float(escena.get("t_out") or 0) - float(escena.get("t_in") or 0)
     veo = medios.motor("video_veo/veo.py")
     if veo.duracion_de_clip(duracion)[0] is None:
         return f"dura {duracion:.1f} s y un clip de Veo llega a 8"
+    alcance = alcance if alcance in ALCANCES else ALCANCE_DE_FABRICA
+    con_capa = bool(escena.get("capa_vectorial")
+                    or (capa_svg and _VISIBLE_SVG.search(capa_svg)))
     if primero:
-        if escena.get("capa_vectorial") or (capa_svg and _VISIBLE_SVG.search(capa_svg)):
-            return "lleva capa grafica encima"
-        return None
+        return "lleva capa grafica encima" if con_capa else None
+    if alcance == "primero":
+        return "solo se anima el primer plano"
+    if alcance == "todos" or (alcance == "mitad" and indice is not None
+                              and int(indice) % 2 == 0):
+        return "lleva capa grafica encima" if con_capa else None
     direccion = str(escena.get("direccion") or "")
     if _COMILLAS.search(direccion):
         return "lleva texto dibujado"
@@ -141,7 +175,7 @@ def motivo_para_no_animar(escena, capa_svg="", primero=False):
     return None
 
 
-def prevision(escenas, modo):
+def prevision(escenas, modo, alcance=ALCANCE_DE_FABRICA):
     """Lo que costaria animar este plan. -> {"clips", "segundos", "usd"}
 
     Es el TECHO: no sabe que clips ya estan en el cache ni mira las capas SVG
@@ -153,7 +187,8 @@ def prevision(escenas, modo):
     veo = medios.motor("video_veo/veo.py")
     clips, segundos, usd = 0, 0, 0.0
     for indice, escena in enumerate(escenas or []):
-        if motivo_para_no_animar(escena, primero=indice == 0) is not None:
+        if motivo_para_no_animar(escena, primero=indice == 0, alcance=alcance,
+                                 indice=indice) is not None:
             continue
         duracion = float(escena["t_out"]) - float(escena["t_in"])
         pedidos, resolucion = veo.duracion_de_clip(duracion)

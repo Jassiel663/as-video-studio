@@ -1517,6 +1517,12 @@ def _validar_params(paso_id, nuevos, ctx=None):
         if valor not in PASOS_MODULOS.animar.MODOS:
             raise ErrorApi(400, f"video_ia: '{nuevos['video_ia']}' no es un modo; "
                                 f"son apagado (''), 'lite' o 'fast'")
+    if (paso_id == "render" and PASOS_MODULOS is not None
+            and "video_ia_planos" in (nuevos or {})):
+        valor = str(nuevos["video_ia_planos"] or "").strip().lower()
+        if valor not in PASOS_MODULOS.animar.ALCANCES:
+            raise ErrorApi(400, f"video_ia_planos: '{nuevos['video_ia_planos']}' no "
+                                f"vale; son {', '.join(PASOS_MODULOS.animar.ALCANCES)}")
 
     if PASOS_MODULOS is not None:
         listas = (("transiciones", PASOS_MODULOS.transiciones.CATALOGO,
@@ -8766,12 +8772,15 @@ def _coste_previsto(ctx, pestanas):
     # direccion que leer y no se puede saber que planos llevan texto: se dice
     # cero y la cuenta sale en cuanto assets deje el plan.
     veo = {"clips": 0, "segundos": 0, "usd": 0.0}
-    modo_veo = PASOS_MODULOS.animar.modo_de(ctx.estado.params("render") or {})
+    params_render = ctx.estado.params("render") or {}
+    modo_veo = PASOS_MODULOS.animar.modo_de(params_render)
+    alcance_veo = PASOS_MODULOS.animar.alcance_de(params_render)
     if modo_veo and "render" in pestanas:
         try:
             plan = PASOS_MODULOS.comun.leer_salida(
                 ctx.proyecto, "assets", "plan.json", obligatorio=False) or {}
-            veo = PASOS_MODULOS.animar.prevision(plan.get("escenas") or [], modo_veo)
+            veo = PASOS_MODULOS.animar.prevision(plan.get("escenas") or [], modo_veo,
+                                                 alcance_veo)
         except Exception:                                   # noqa: BLE001
             pass          # una prevision que falla no puede impedir generar
     return {"imagenes": imagenes, "calidad": calidad,
@@ -8780,7 +8789,8 @@ def _coste_previsto(ctx, pestanas):
             "usd_por_generar": round(por_generar * usd_imagen + usd_tts
                                      + veo["usd"], 3),
             "caracteres": caracteres, "usd_tts": usd_tts,
-            "video_ia": modo_veo, "clips_veo": veo["clips"],
+            "video_ia": modo_veo, "video_ia_planos": alcance_veo,
+            "clips_veo": veo["clips"],
             "segundos_veo": veo["segundos"], "usd_veo": veo["usd"],
             "usd_total": round(usd_imagenes + usd_tts + veo["usd"], 3),
             "planos": planos}

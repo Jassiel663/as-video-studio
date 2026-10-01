@@ -8667,6 +8667,31 @@ const MODOS_VIDEO_IA = [
   ['fast', 'Veo Fast — ~0,10 $ por segundo, mejor movimiento'],
 ];
 
+/* CUANTOS PLANOS SE ANIMAN (`video_ia_planos`, ver animar.ALCANCES). Cada
+ * opcion anima todo lo de la anterior y mas, asi que de arriba abajo el video
+ * se mueve mas y cuesta mas. Sin tocarlo es «sin_texto», lo de siempre. */
+const PLANOS_VIDEO_IA = [
+  ['primero', 'Solo el primer plano (el gancho) — lo más barato'],
+  ['sin_texto', 'Los planos sin texto + el primero — recomendado'],
+  ['mitad', 'Más movimiento: también la mitad de los que llevan texto'],
+  ['todos', 'Todo en movimiento: también los que llevan texto — lo más caro'],
+];
+
+/* El precio de animar, sacado del plan de la tanda render: es la misma cuenta
+ * que sale junto al boton, pero dicha aqui al lado de lo que la cambia. */
+function previsionVideoIaLight() {
+  const coste = ((APP.light.video.planes || {}).render || {}).coste || {};
+  if (!coste.video_ia) return null;
+  if (!coste.clips_veo) {
+    return h('div', { clase: 'meta' },
+      'el número de planos animados sale en cuanto estén las imágenes');
+  }
+  return h('div', { clase: 'meta' },
+    `${coste.clips_veo} ${coste.clips_veo === 1 ? 'plano animado' : 'planos animados'}`
+    + ` · hasta ≈ ${Number(coste.usd_veo || 0).toFixed(2)} $ de animación`
+    + ' (lo ya animado no se vuelve a pagar)');
+}
+
 function filaVideoIaLight() {
   const v = videoAbierto();
   if (!v.pid) return h('span', {});
@@ -8677,7 +8702,9 @@ function filaVideoIaLight() {
     pedir(API.paso(pid, 'render'))
       .then(ficha => {
         if (videoAbierto().pid !== pid) return;
-        videoAbierto().videoIa = String(((ficha || {}).params || {}).video_ia || '');
+        const params = (ficha || {}).params || {};
+        videoAbierto().videoIa = String(params.video_ia || '');
+        videoAbierto().videoIaPlanos = String(params.video_ia_planos || 'sin_texto');
         refrescarVivosLight();
       })
       .catch(() => { videoAbierto().videoIa = ''; });
@@ -8702,13 +8729,45 @@ function filaVideoIaLight() {
     },
     value: v.videoIa,
   }, MODOS_VIDEO_IA.map(([valor, texto]) => h('option', { value: valor }, texto)));
-  return h('div', { clase: 'fila' },
-    conAyuda('Anima con Google Veo solo los planos SIN texto: los que llevan '
-      + 'letras, cifras, pantallas o carteles se quedan con imagen y zoom, porque '
-      + 'Veo deforma el texto. Necesita la clave de Google en Configuración › '
-      + 'Claves. Se aplica al pulsar «Regenerar Vídeo».',
+  const fila = h('div', { clase: 'fila' },
+    conAyuda('Anima los planos con IA de vídeo: Google Veo primero y, si se '
+      + 'queda sin cuota, fal.ai. Debajo eliges CUÁNTOS planos. Necesita la '
+      + 'clave de Google (o la de fal.ai) en Configuración › Claves. Se aplica '
+      + 'al pulsar «Regenerar Vídeo».',
       h('b', {}, 'Planos en movimiento')),
     sel);
+  if (!v.videoIa) return fila;
+  const cuantos = h('select', {
+    disabled: !!trabajoVideoLight(),
+    onchange: async ev => {
+      const valor = ev.target.value;
+      try {
+        await pedir(API.params(v.pid, 'render'),
+          { method: 'PUT', cuerpo: { params: { video_ia_planos: valor } } });
+        v.videoIaPlanos = valor;
+        toast({
+          primero: 'solo se animará el primer plano',
+          sin_texto: 'se animarán el primero y los planos sin texto',
+          mitad: 'se animarán también la mitad de los planos con texto',
+          todos: 'se animarán todos los planos que se puedan',
+        }[valor] + ' al regenerar');
+        refrescarCosteLight(true);
+        refrescarPlanLight('render', true);
+        refrescarVivosLight();
+      } catch (e) { toast(e.message, true); }
+    },
+    value: v.videoIaPlanos || 'sin_texto',
+  }, PLANOS_VIDEO_IA.map(([valor, texto]) => h('option', { value: valor }, texto)));
+  return h('div', {},
+    fila,
+    h('div', { clase: 'fila' },
+      conAyuda('Qué planos se animan. Los que llevan texto se animan pidiendo '
+        + 'que el texto se quede quieto y legible, pero la IA a veces lo '
+        + 'deforma: revísalos. Los que llevan flechas o recuadros encima y los '
+        + 'de más de 8 s siguen siempre con imagen y zoom.',
+        h('b', {}, '¿Cuántos?')),
+      cuantos),
+    previsionVideoIaLight());
 }
 
 function vistaVideoLight() {
