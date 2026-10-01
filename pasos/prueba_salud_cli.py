@@ -248,8 +248,9 @@ def prueba_claves():
     try:
         fichas = comprobar_claves.probar_todas(cuentas_claude=[{"config_dir": "", "etiqueta": "x"}])
         igual([f["proveedor"] for f in fichas],
-              ["openai", "cartesia", "jamendo", "freesound", "google", "fal", "claude"],
-              "probar_todas trae los siete en orden")
+              ["openai", "cartesia", "jamendo", "freesound", "google", "fal", "pexels",
+               "pixabay", "claude"],
+              "probar_todas trae los nueve en orden")
         comprobar(all(f["estado"] in ("ok", "sin_clave") for f in fichas),
                   "y en simulado ninguna sale a la red")
         texto = comprobar_claves.resumen_texto(fichas)

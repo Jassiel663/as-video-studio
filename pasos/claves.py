@@ -113,6 +113,10 @@ def _vacio():
         "google": {"clave": ""},
         # fal.ai: el respaldo de Veo cuando Google se queda sin cuota
         "fal": {"clave": ""},
+        # bancos de video gratis: el material REAL del modo documental
+        # (pasos/reales.py). Gratis los dos; sin ninguna, el modo no hace nada
+        "pexels": {"clave": ""},
+        "pixabay": {"clave": ""},
         "claude_cli": {"cuentas": []},
     }
 
@@ -161,7 +165,7 @@ def _normalizar(datos):
     elif isinstance(cartesia, str):
         base["cartesia"]["clave"] = cartesia.strip()
 
-    for suelta in ("jamendo", "freesound", "google", "fal"):
+    for suelta in ("jamendo", "freesound", "google", "fal", "pexels", "pixabay"):
         cruda = datos.get(suelta)
         if isinstance(cruda, dict):
             base[suelta]["clave"] = str(cruda.get("clave") or "").strip()
@@ -250,6 +254,8 @@ def adoptar_env():
     datos["freesound"]["clave"] = valores.get("FREESOUND_API_KEY", "") or ""
     datos["google"]["clave"] = valores.get("GEMINI_API_KEY", "") or ""
     datos["fal"]["clave"] = valores.get("FAL_KEY", "") or ""
+    datos["pexels"]["clave"] = valores.get("PEXELS_API_KEY", "") or ""
+    datos["pixabay"]["clave"] = valores.get("PIXABAY_API_KEY", "") or ""
     return datos
 
 
@@ -336,7 +342,8 @@ def _fusionar(actual, peticion):
     # es la que ya habia. Sin eso, editar la de Jamendo borraria la de Cartesia,
     # porque la clave de verdad no baja al navegador NUNCA y la pantalla manda
     # el centinela en su lugar.
-    for suelta in ("cartesia", "jamendo", "freesound", "google", "fal"):
+    for suelta in ("cartesia", "jamendo", "freesound", "google", "fal", "pexels",
+                   "pixabay"):
         if suelta in peticion:
             ficha = peticion.get(suelta)
             clave = ficha.get("clave") if isinstance(ficha, dict) else ficha
@@ -484,12 +491,17 @@ def espejar_env(datos=None):
         nuestras["GEMINI_API_KEY"] = datos["google"]["clave"]
     if datos["fal"]["clave"]:
         nuestras["FAL_KEY"] = datos["fal"]["clave"]
+    if datos["pexels"]["clave"]:
+        nuestras["PEXELS_API_KEY"] = datos["pexels"]["clave"]
+    if datos["pixabay"]["clave"]:
+        nuestras["PIXABAY_API_KEY"] = datos["pixabay"]["clave"]
 
     # Los nombres que ESTA pantalla escribe. Lo que no este aqui se conserva tal
     # cual y en su orden: un .env puede tener cosas que nadie de aqui gestiona.
     gestionadas = {"OPENAI_API_KEY", "CARTESIA_API_KEY",
                    "JAMENDO_CLIENT_ID", "FREESOUND_API_KEY",
-                   "GEMINI_API_KEY", "FAL_KEY"} | {
+                   "GEMINI_API_KEY", "FAL_KEY", "PEXELS_API_KEY",
+                   "PIXABAY_API_KEY"} | {
         f"OPENAI_API_KEY_{i}" for i in range(2, MAX_OPENAI + 1)}
 
     lineas, puestas = [], set()
@@ -570,6 +582,14 @@ def resumen(datos=None):
             "puesta": bool(datos["fal"]["clave"]),
             "cola": tapar(datos["fal"]["clave"]),
         },
+        "pexels": {
+            "puesta": bool(datos["pexels"]["clave"]),
+            "cola": tapar(datos["pexels"]["clave"]),
+        },
+        "pixabay": {
+            "puesta": bool(datos["pixabay"]["clave"]),
+            "cola": tapar(datos["pixabay"]["clave"]),
+        },
         "fichero": FICHERO,
         "max_openai": MAX_OPENAI,
     }
@@ -643,3 +663,13 @@ def google():
 def fal():
     """La clave de fal.ai (respaldo de Veo) guardada aqui, si la hay."""
     return leer()["fal"]["clave"] or ""
+
+
+def pexels():
+    """La clave de Pexels (videos reales, modo documental), si la hay."""
+    return leer()["pexels"]["clave"] or ""
+
+
+def pixabay():
+    """La clave de Pixabay (videos reales, modo documental), si la hay."""
+    return leer()["pixabay"]["clave"] or ""

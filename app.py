@@ -1518,6 +1518,12 @@ def _validar_params(paso_id, nuevos, ctx=None):
             raise ErrorApi(400, f"video_ia: '{nuevos['video_ia']}' no es un modo; "
                                 f"son apagado (''), 'lite' o 'fast'")
     if (paso_id == "render" and PASOS_MODULOS is not None
+            and "video_real" in (nuevos or {})):
+        valor = str(nuevos["video_real"] or "").strip().lower()
+        if valor not in PASOS_MODULOS.reales.MODOS:
+            raise ErrorApi(400, f"video_real: '{nuevos['video_real']}' no vale; son "
+                                f"apagado (''), 'mezcla' o 'maximo'")
+    if (paso_id == "render" and PASOS_MODULOS is not None
             and "video_ia_planos" in (nuevos or {})):
         valor = str(nuevos["video_ia_planos"] or "").strip().lower()
         if valor not in PASOS_MODULOS.animar.ALCANCES:

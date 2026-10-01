@@ -226,6 +226,39 @@ def probar_fal(clave):
                                 f"{_texto_corto(respuesta)}")
 
 
+def probar_pexels(clave):
+    if not clave:
+        return _ficha("pexels", "sin_clave", "no hay clave de Pexels: el modo "
+                                             "documental buscara solo en Pixabay")
+    respuesta, fallo = _pedir("GET", "https://api.pexels.com/videos/search",
+                              params={"query": "ocean", "per_page": 1},
+                              headers={"Authorization": clave})
+    if respuesta is None:
+        return _ficha("pexels", "sin_red", f"no se ha podido hablar con Pexels: {fallo}")
+    if respuesta.status_code == 200:
+        return _ficha("pexels", "ok", "la clave autentica (gratis: 200 busquedas por hora)")
+    if respuesta.status_code in (401, 403):
+        return _ficha("pexels", "mal", "Pexels no reconoce la clave")
+    return _ficha("pexels", "mal", f"Pexels contesta {respuesta.status_code}: "
+                                   f"{_texto_corto(respuesta)}")
+
+
+def probar_pixabay(clave):
+    if not clave:
+        return _ficha("pixabay", "sin_clave", "no hay clave de Pixabay: el modo "
+                                               "documental buscara solo en Pexels")
+    respuesta, fallo = _pedir("GET", "https://pixabay.com/api/videos/",
+                              params={"key": clave, "q": "ocean", "per_page": 3})
+    if respuesta is None:
+        return _ficha("pixabay", "sin_red", f"no se ha podido hablar con Pixabay: {fallo}")
+    if respuesta.status_code == 200:
+        return _ficha("pixabay", "ok", "la clave autentica (gratis)")
+    if respuesta.status_code in (400, 401, 403):
+        return _ficha("pixabay", "mal", "Pixabay no reconoce la clave")
+    return _ficha("pixabay", "mal", f"Pixabay contesta {respuesta.status_code}: "
+                                    f"{_texto_corto(respuesta)}")
+
+
 def probar_claude(cuentas):
     """Una ficha por cuenta del CLI con sesion, con lo que apunta salud_cli."""
     fichas = []
@@ -257,7 +290,9 @@ def probar_todas(cuentas_claude=(), con_claude=True):
                                   ("jamendo", bool(almacen["jamendo"]["clave"])),
                                   ("freesound", bool(almacen["freesound"]["clave"])),
                                   ("google", bool(almacen["google"]["clave"])),
-                                  ("fal", bool(almacen["fal"]["clave"]))):
+                                  ("fal", bool(almacen["fal"]["clave"])),
+                                  ("pexels", bool(almacen["pexels"]["clave"])),
+                                  ("pixabay", bool(almacen["pixabay"]["clave"]))):
             fichas.append(_ficha(proveedor, "ok" if puesta else "sin_clave",
                                  "simulado" if puesta else "sin poner"))
         if con_claude:
@@ -270,6 +305,8 @@ def probar_todas(cuentas_claude=(), con_claude=True):
         (probar_freesound, almacen["freesound"]["clave"]),
         (probar_google, almacen["google"]["clave"]),
         (probar_fal, almacen["fal"]["clave"]),
+        (probar_pexels, almacen["pexels"]["clave"]),
+        (probar_pixabay, almacen["pixabay"]["clave"]),
     )
     for funcion, clave in pruebas:
         try:
@@ -290,6 +327,7 @@ def probar_todas(cuentas_claude=(), con_claude=True):
 NOMBRES = {"openai": "OpenAI (imágenes)", "cartesia": "Cartesia (voz)",
            "jamendo": "Jamendo (música)", "freesound": "FreeSound (efectos)",
            "google": "Google Veo (vídeo)", "fal": "fal.ai (vídeo de respaldo)",
+           "pexels": "Pexels (vídeos reales)", "pixabay": "Pixabay (vídeos reales)",
            "claude": "Claude"}
 
 

@@ -49,6 +49,7 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import animar  # noqa: E402
+import reales  # noqa: E402
 import cartelas  # noqa: E402
 import estadisticas  # noqa: E402
 import medios  # noqa: E402
@@ -1375,6 +1376,13 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
     modo_veo = "" if solo_montar else animar.modo_de(params)
     alcance_veo = animar.alcance_de(params)
     candidatos_veo = []
+    # EL MODO DOCUMENTAL (pasos/reales.py): Claude elige que planos van con
+    # video real de banco. Esos se intentan antes que Veo; el que no encuentra
+    # clip vuelve a la IA y, si toca, se anima como cualquier otro.
+    modo_real = "" if solo_montar else reales.modo_de(params)
+    plan_real, avisos_reales = (reales.planificar(proyecto, escenas, modo_real, avisar)
+                                if modo_real else ({}, []))
+    candidatos_reales, veo_si_no_hay_real = [], []
     for indice, escena in enumerate(escenas):
         sid = escena["id"]
         uid = f"escena:{sid}"
@@ -1441,12 +1449,16 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
             "corte": {k: v for k, v in (cortes.get(sid) or {}).items()},
             "pagina_trans": pagina_trans,
             "conservar_frames": bool(p["conservar_frames"])})
+        real = (sid in plan_real and reales.puede_ser_real(escena, svg) is None)
+        if real:
+            candidatos_reales.append((tareas[-1], escena, plan_real[sid]))
         # el primer plano es el gancho: se anima aunque lleve texto
         if modo_veo and animar.motivo_para_no_animar(
                 escena, svg, primero=indice == 0, alcance=alcance_veo,
                 indice=indice) is None:
             tareas[-1]["primero"] = indice == 0
-            candidatos_veo.append((tareas[-1], escena, hyper, mov))
+            (veo_si_no_hay_real if real else candidatos_veo).append(
+                (tareas[-1], escena, hyper, mov))
 
     # QUIEN TIENE QUE ESPERAR A QUIEN. La transicion de un plano se cuece sobre
     # el ULTIMO FOTOGRAMA del anterior, asi que si ese plano tambien se
@@ -1465,6 +1477,11 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
                 and not os.path.exists(tarea["anterior"])):
             tarea["anterior"] = None
 
+    if candidatos_reales:
+        puestos, avisos = reales.poner(candidatos_reales, proyecto, ancho, alto,
+                                       trabajo, avisar)
+        avisos_reales += avisos
+        candidatos_veo += [c for c in veo_si_no_hay_real if c[0]["id"] not in puestos]
     avisos_veo = _animar_tareas(candidatos_veo, proyecto, modo_veo, ancho, alto,
                                 trabajo, avisar) if modo_veo else []
 
@@ -1557,7 +1574,7 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
     else:
         rehechas = {uid: ficha for uid, ficha in resultados.items() if uid in pedidas}
 
-    avisos = list(avisos_veo)
+    avisos = list(avisos_reales) + list(avisos_veo)
     if arrastrados:
         avisos.append(
             f"{len(arrastrados)} clip(s) se han rehecho sin pedirlos "

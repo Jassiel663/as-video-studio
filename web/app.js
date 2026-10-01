@@ -2982,6 +2982,14 @@ function seccionOtrasClaves(ficha) {
   fila(['fal', 'fal.ai — vídeo de respaldo', 'la clave de fal.ai/dashboard/keys (la '
     + 'entera, con la forma «id:secreto»). Se usa sola cuando Google se queda sin '
     + 'cuota: Veo Fast en el primer plano y los que llevan texto, Kling en el resto.']);
+  // LOS VIDEOS REALES del modo documental (pasos/reales.py): bancos gratis.
+  // Con una basta; con las dos hay mas donde elegir y mas cupo de busquedas.
+  caja.appendChild(h('div', { clase: 'pista' },
+    'Vídeos reales para el modo documental: bancos gratis, con licencia para '
+    + 'usarlos en YouTube. Con una clave basta; con las dos hay más donde elegir.'));
+  fila(['pexels', 'Pexels — vídeos reales', 'la API key de pexels.com/api (gratis)']);
+  fila(['pixabay', 'Pixabay — vídeos reales', 'la API key de pixabay.com/api/docs '
+    + '(gratis, sale al iniciar sesión)']);
   return caja;
 }
 
@@ -8692,7 +8700,52 @@ function previsionVideoIaLight() {
     + ' (lo ya animado no se vuelve a pagar)');
 }
 
+/* EL MODO DOCUMENTAL (`video_real` del render, pasos/reales.py): planos con
+ * video REAL de Pexels/Pixabay donde encaje, IA en el resto. Va encima de Veo
+ * porque decide primero: lo que queda con IA es lo que despues se anima. */
+const MODOS_VIDEO_REAL = [
+  ['', 'Apagado — todo con IA'],
+  ['mezcla', 'Documental — vídeo real donde encaje, IA en el resto'],
+  ['maximo', 'Documental máximo — vídeo real en todo lo posible'],
+];
+
+function filaRealLight() {
+  const v = videoAbierto();
+  if (!v.pid || v.videoIa === null || v.videoIa === undefined) return null;
+  const sel = h('select', {
+    disabled: !!trabajoVideoLight(),
+    onchange: async ev => {
+      const valor = ev.target.value;
+      try {
+        await pedir(API.params(v.pid, 'render'),
+          { method: 'PUT', cuerpo: { params: { video_real: valor } } });
+        v.videoReal = valor;
+        toast(valor ? 'modo documental: se buscarán vídeos reales al regenerar'
+                    : 'modo documental apagado: todo con IA');
+        refrescarPlanLight('render', true);
+        refrescarVivosLight();
+      } catch (e) { toast(e.message, true); }
+    },
+    value: v.videoReal || '',
+  }, MODOS_VIDEO_REAL.map(([valor, texto]) => h('option', { value: valor }, texto)));
+  return h('div', { clase: 'fila' },
+    conAyuda('Usa vídeos REALES de Pexels y Pixabay (gratis, con licencia para '
+      + 'YouTube) en los planos donde encajan: lugares, naturaleza, ciudades, '
+      + 'objetos, oficios. Claude elige cuáles y qué buscar, sin coste. El resto '
+      + 'sigue con IA y se puede animar con Veo abajo. Necesita la clave de '
+      + 'Pexels o de Pixabay en Configuración › Claves › Vídeo. Se aplica al '
+      + 'pulsar «Regenerar Vídeo».',
+      h('b', {}, 'Vídeos reales')),
+    sel);
+}
+
 function filaVideoIaLight() {
+  const veo = filaVeoLight();
+  const real = filaRealLight();
+  return real ? h('div', {}, real, veo) : veo;
+}
+
+function filaVeoLight() {
   const v = videoAbierto();
   if (!v.pid) return h('span', {});
   if (v.videoIa === undefined || v.videoIaPid !== v.pid) {
@@ -8705,6 +8758,7 @@ function filaVideoIaLight() {
         const params = (ficha || {}).params || {};
         videoAbierto().videoIa = String(params.video_ia || '');
         videoAbierto().videoIaPlanos = String(params.video_ia_planos || 'sin_texto');
+        videoAbierto().videoReal = String(params.video_real || '');
         refrescarVivosLight();
       })
       .catch(() => { videoAbierto().videoIa = ''; });
