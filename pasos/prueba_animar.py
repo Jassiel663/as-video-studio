@@ -256,8 +256,8 @@ else:
         t1 = {"id": "S021", "hyper": origen, "mov": dict(mov)}
         t2 = {"id": "S020", "hyper": origen, "mov": dict(mov)}
         t3 = {"id": "S022", "hyper": origen, "mov": dict(mov)}
-        antes = p8_render.VEO_A_LA_VEZ
-        p8_render.VEO_A_LA_VEZ = 1           # en orden, para poder contarlo
+        antes = p8_render.ANIMAR_A_LA_VEZ
+        p8_render.ANIMAR_A_LA_VEZ = 1           # en orden, para poder contarlo
         try:
             avisos = p8_render._animar_tareas(
                 [(t1, escena("S021", direccion="A windy beach."), origen, mov),
@@ -266,7 +266,7 @@ else:
                 Proyecto, "fast", 640, 360, os.path.join(TEMPORAL, "trabajo"),
                 lambda *a: None)
         finally:
-            p8_render.VEO_A_LA_VEZ = antes
+            p8_render.ANIMAR_A_LA_VEZ = antes
         igual("se pide UNA vez; tras la cuota agotada no se pide mas", len(pedidas), 1)
         comprobar("el clip guardado se usa igual", bool(t2.get("fotogramas")), t2)
         comprobar("los otros dos quedan quietos",
@@ -292,7 +292,7 @@ else:
         gancho = escena("S030", direccion='A sign reading "OPEN" swings.')
         tp = {"id": "S030", "hyper": origen, "mov": dict(mov), "primero": True}
         tk = {"id": "S031", "hyper": origen, "mov": dict(mov)}
-        p8_render.VEO_A_LA_VEZ = 1
+        p8_render.ANIMAR_A_LA_VEZ = 1
         try:
             avisos = p8_render._animar_tareas(
                 [(tp, gancho, origen, mov),
@@ -300,7 +300,7 @@ else:
                 Proyecto, "fast", 640, 360, os.path.join(TEMPORAL, "trabajo"),
                 lambda *a: None)
         finally:
-            p8_render.VEO_A_LA_VEZ = antes
+            p8_render.ANIMAR_A_LA_VEZ = antes
         igual("a Google se le pregunta una vez y luego ya no", len(pedidas), 1)
         comprobar("los dos planos se animan igual", bool(tp.get("fotogramas"))
                   and bool(tk.get("fotogramas")))
@@ -321,7 +321,7 @@ else:
         fal.generar = fal_sin_saldo
         u1 = {"id": "S040", "hyper": origen, "mov": dict(mov)}
         u2 = {"id": "S041", "hyper": origen, "mov": dict(mov)}
-        p8_render.VEO_A_LA_VEZ = 1
+        p8_render.ANIMAR_A_LA_VEZ = 1
         try:
             avisos = p8_render._animar_tareas(
                 [(u1, escena("S040", direccion="A red barn."), origen, mov),
@@ -329,7 +329,7 @@ else:
                 Proyecto, "fast", 640, 360, os.path.join(TEMPORAL, "trabajo"),
                 lambda *a: None)
         finally:
-            p8_render.VEO_A_LA_VEZ = antes
+            p8_render.ANIMAR_A_LA_VEZ = antes
             fal.generar = original_fal
             animar.COSTE.reportar_fal = original_reportar_fal
             os.environ.pop("FAL_KEY", None)
@@ -337,6 +337,56 @@ else:
         comprobar("y los planos quedan quietos, avisado",
                   "fotogramas" not in u1 and "fotogramas" not in u2
                   and "sin cobrarse" in " ".join(avisos), avisos)
+
+        print("\n== a la vez: Google de cuatro en cuatro, fal.ai de ocho en ocho ==")
+        import threading
+        import time
+        cuenta = {"ahora": 0, "maximo": 0}
+        candado_cuenta = threading.Lock()
+
+        def contando(resultado):
+            def generar(*a, **k):
+                with candado_cuenta:
+                    cuenta["ahora"] += 1
+                    cuenta["maximo"] = max(cuenta["maximo"], cuenta["ahora"])
+                time.sleep(0.3)
+                with candado_cuenta:
+                    cuenta["ahora"] -= 1
+                return resultado(k)
+            return generar
+
+        def lote(prefijo, n):
+            tareas = []
+            for i in range(n):
+                sid = f"{prefijo}{i:02d}"
+                t = {"id": sid, "hyper": origen, "mov": dict(mov)}
+                tareas.append((t, escena(sid, direccion=f"Harbour number {sid}."),
+                               origen, mov))
+            return tareas
+
+        veo.generar = contando(lambda k: doble(None, None, **k))
+        p8_render._animar_tareas(
+            lote("S1", 12), Proyecto, "fast", 640, 360,
+            os.path.join(TEMPORAL, "trabajo"), lambda *a: None)
+        igual("con ocho hilos, a Google nunca le llegan mas de cuatro",
+              cuenta["maximo"], animar.GOOGLE_A_LA_VEZ)
+
+        cuenta["maximo"] = 0
+        veo.generar = sin_cuota
+        fal.generar = contando(lambda k: doble_fal(None, None, **k))
+        animar.COSTE.reportar_fal = lambda *a, **k: None
+        os.environ["FAL_KEY"] = "id:de-mentira"
+        try:
+            # el primero agota Google; los demas van directos a fal
+            p8_render._animar_tareas(
+                lote("S2", 12), Proyecto, "fast", 640, 360,
+                os.path.join(TEMPORAL, "trabajo"), lambda *a: None)
+        finally:
+            fal.generar = original_fal
+            animar.COSTE.reportar_fal = original_reportar_fal
+            os.environ.pop("FAL_KEY", None)
+        igual("y a fal.ai le llegan ocho a la vez",
+              cuenta["maximo"], p8_render.ANIMAR_A_LA_VEZ)
 
         print("\n== leer el 429 de Google ==")
 

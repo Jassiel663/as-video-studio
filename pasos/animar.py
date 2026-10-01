@@ -33,6 +33,7 @@ import hashlib
 import os
 import re
 import subprocess
+import threading
 
 try:
     from nucleo import coste as COSTE
@@ -49,6 +50,13 @@ MODOS = ("", "lite", "fast")
 #: Sube si cambia la forma de pedir el clip (prompt, recorte): los clips de la
 #: version anterior dejan de valer y se piden otra vez.
 VERSION = 1
+
+#: GOOGLE, DE CUATRO EN CUATRO. Su limite es por minuto y cuatro clips en
+#: paralelo no lo rozan. El render pide mas a la vez (ver
+#: `p8_render.ANIMAR_A_LA_VEZ`) porque fal.ai aguanta mas: este semaforo es lo
+#: que mantiene a Google en cuatro aunque haya ocho hilos animando.
+GOOGLE_A_LA_VEZ = 4
+_TURNO_GOOGLE = threading.BoundedSemaphore(GOOGLE_A_LA_VEZ)
 
 #: Letras entre comillas en la direccion del plano: lo que el prompt dibuja.
 _COMILLAS = re.compile(r"[\"“”«»]([^\"“”«»]{1,120})[\"“”«»]")
@@ -283,9 +291,10 @@ def clip(proyecto, escena, hyper, ancho, alto, modo, ventana=None, avisar=None,
 
     if not solo_cache:
         try:
-            mp4, meta = veo.generar(entrada, prompt, modo=modo, segundos=segundos,
-                                    resolucion=resolucion, aspecto=aspecto,
-                                    negativo=negativo, avisar=avisar)
+            with _TURNO_GOOGLE:
+                mp4, meta = veo.generar(entrada, prompt, modo=modo, segundos=segundos,
+                                        resolucion=resolucion, aspecto=aspecto,
+                                        negativo=negativo, avisar=avisar)
             _guardar(destino, mp4)
             COSTE.reportar_veo(meta["segundos"], meta["modelo"], meta["resolucion"],
                                unidad=f"escena:{escena['id']}",

@@ -1128,10 +1128,11 @@ def _correr_lotes_en_procesos(lotes, trabajo, avisar, total_planos,
     return salida
 
 
-#: Cuantos clips de Veo se piden a la vez. Cada uno tarda ~45 s en el servidor
-#: de Google y el limite de la API es por minuto: cuatro en paralelo ponen un
-#: video de ochenta planos animados en un cuarto de hora, sin rozar el tope.
-VEO_A_LA_VEZ = 4
+#: Cuantos planos se animan a la vez. Google sigue de cuatro en cuatro (su
+#: limite es por minuto, ver `animar.GOOGLE_A_LA_VEZ`); los demas hilos solo
+#: le sirven a fal.ai, que tarda ~5 min por clip y los atiende en paralelo:
+#: con ocho, treinta planos de respaldo bajan de ~40 a ~20 minutos.
+ANIMAR_A_LA_VEZ = 8
 
 
 def _animar_tareas(candidatos, proyecto, modo, ancho, alto, trabajo, avisar):
@@ -1199,7 +1200,7 @@ def _animar_tareas(candidatos, proyecto, modo, ancho, alto, trabajo, avisar):
         return rutas, fps_clip
 
     avisar(0.02, f"animando con Veo {len(candidatos)} plano(s) sin texto")
-    with ThreadPoolExecutor(max_workers=VEO_A_LA_VEZ) as pool:
+    with ThreadPoolExecutor(max_workers=ANIMAR_A_LA_VEZ) as pool:
         futuros = {pool.submit(uno, *c): c for c in candidatos}
         for futuro in as_completed(futuros):
             tarea = futuros[futuro][0]
