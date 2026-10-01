@@ -53,6 +53,8 @@ EL CANAL
 - Como se ve: {estetica}
 - Videos ya hechos: {hechos}
 {enfoque}
+Si no queda claro de que TEMA va el canal (un estilo nuevo sin videos solo dice como habla y como se ve), NO te niegues ni pidas mas datos: deduce el nicho mas probable por el nombre, el tono y la estetica, dilo en una frase al principio del resumen, y haz el estudio de ese nicho.
+
 QUE QUIERO, buscando de verdad (cita lo que encuentres, no inventes cifras):
 1. EL NICHO: de que va este tipo de canal, quien lo ve, que formatos y temas \
 estan funcionando AHORA (2026), que esta saturado y que hueco hay.
