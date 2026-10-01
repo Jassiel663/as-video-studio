@@ -183,7 +183,7 @@ def medir(fotogramas=FOTOGRAMAS, resolucion=(1920, 1080), fps=30,
             t0 = time.perf_counter()
             navegador.pintar(numero / float(fps))
             t1 = time.perf_counter()
-            navegador.capturar(os.path.join(carpeta, f"f{numero + 1:05d}.png"))
+            navegador.capturar(p8_render.fotograma(carpeta, numero + 1))
             t2 = time.perf_counter()
             pintar += t1 - t0
             capturar += t2 - t1
@@ -200,7 +200,7 @@ def medir(fotogramas=FOTOGRAMAS, resolucion=(1920, 1080), fps=30,
             paleta = {"linea": "#d8a657", "acento": "#d8785a", "texto": "#ece7dc"}
             pagina_trans = transiciones.pagina(
                 os.path.join(trabajo, "transicion.html"), ancho, alto, paleta)
-            anterior = os.path.join(carpeta, "f00001.png")
+            anterior = p8_render.fotograma(carpeta, 1)
             cuantos = min(fotogramas, int(round(fps * 0.4)))
             corte = {"shader": transiciones.frag_de("fundido"), "duracion": 0.4}
             tiempos["transicion"] = _cronometrar(

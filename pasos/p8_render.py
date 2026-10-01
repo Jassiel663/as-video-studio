@@ -44,6 +44,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 import websocket
+from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -107,6 +108,23 @@ PARAMS_POR_DEFECTO = {
     # (`sonido.igualar_por_papel`); esto decide cuanto suenan TODOS.
     "efectos_db": 0.0,
 }
+
+#: EN QUE SE GUARDAN LOS FOTOGRAMAS CAPTURADOS. JPEG de calidad 95, no PNG.
+#: Medido el 01-10-2026 en el VPS (4 vCPU) sobre un plano de 1920x1080: el PNG
+#: tarda 1,24 s por fotograma en salir de Edge (comprimirlo y mandar 2 MB en
+#: base64 por CDP) y era el 85 % del render; el JPEG 95 sale en 0,20 s. La
+#: perdida no se ve: un JPEG 90 contra el PNG da 48,3 dB de PSNR, y el propio
+#: libx264 con crf 16 -- que se aplica igual despues -- pierde mas (46,8 dB).
+#: Un video de 200 planos pasa de ~3 h de montaje a ~1 h. `ESTUDIO_CAPTURA=png`
+#: vuelve al PNG de antes, por si alguna vez hiciera falta comparar.
+FORMATO_FOTOGRAMA = "png" if os.environ.get("ESTUDIO_CAPTURA", "").lower() == "png" else "jpg"
+CALIDAD_JPEG = 95
+
+
+def fotograma(carpeta, numero):
+    """La ruta del fotograma `numero` (desde 1) de un plano."""
+    return os.path.join(carpeta, f"f{int(numero):05d}.{FORMATO_FOTOGRAMA}")
+
 
 CALIDADES = {
     "alta": {"crf": "16", "preset": "slow"},
@@ -285,8 +303,13 @@ class Navegador:
             self.rAF = False
 
     def capturar(self, destino):
-        datos = self.llamar("Page.captureScreenshot", format="png",
-                            captureBeyondViewport=False)
+        """Captura la pestana a `destino`, en el formato que diga su extension."""
+        if os.path.splitext(destino)[1].lower() in (".jpg", ".jpeg"):
+            formato = {"format": "jpeg", "quality": CALIDAD_JPEG}
+        else:
+            formato = {"format": "png"}
+        datos = self.llamar("Page.captureScreenshot", captureBeyondViewport=False,
+                            **formato)
         with open(destino, "wb") as fh:
             fh.write(base64.b64decode(datos["data"]))
         return destino
@@ -459,7 +482,7 @@ def _pagina_de(escena, mov, capa_svg, hyper, p, destino, capa_fija="", fps=30,
 def _codificar(dir_frames, destino, fps, calidad):
     ajustes = CALIDADES.get(calidad) or CALIDADES["media"]
     orden = [medios.ffmpeg(), "-y", "-loglevel", "error",
-             "-framerate", str(fps), "-i", os.path.join(dir_frames, "f%05d.png"),
+             "-framerate", str(fps), "-i", os.path.join(dir_frames, f"f%05d.{FORMATO_FOTOGRAMA}"),
              "-c:v", "libx264", "-preset", ajustes["preset"], "-crf", ajustes["crf"],
              "-pix_fmt", "yuv420p", "-r", str(fps), destino]
     proceso = subprocess.run(orden, capture_output=True, text=True, timeout=3600,
@@ -702,7 +725,7 @@ def _cocer_transicion(navegador, pagina_trans, anterior, carpeta, total, fps,
         return 0
     navegador.abrir(pagina_trans)
     for indice, progreso in enumerate(transiciones.progresos(cuantos)):
-        marco = os.path.join(carpeta, f"f{indice + 1:05d}.png")
+        marco = fotograma(carpeta, indice + 1)
         transiciones.componer(navegador, anterior, marco, progreso,
                               corte["shader"], marco)
     return cuantos
@@ -875,7 +898,14 @@ def _guardar_ultimo(origen, destino):
     transicion, y una copia a medias se leeria como un fotograma valido.
     """
     temporal = destino + ".parcial"
-    medios.copiar(origen, temporal)
+    if os.path.splitext(origen)[1].lower() == os.path.splitext(destino)[1].lower():
+        medios.copiar(origen, temporal)
+    else:
+        # EL ULTIMO SIGUE SIENDO UN PNG aunque los fotogramas sean JPEG: es lo
+        # que lee el plano siguiente para su transicion, y un render de un solo
+        # plano lee el de un render anterior, que es PNG. Un nombre, un formato.
+        with Image.open(origen) as imagen:
+            imagen.convert("RGB").save(temporal, format="PNG", compress_level=1)
     medios.reemplazar(temporal, destino)
     return destino
 
@@ -914,11 +944,11 @@ def renderizar_plano(tarea, navegador=None):
     navegador.abrir(pagina)
     for numero in range(total):
         navegador.pintar(numero / float(fps))
-        navegador.capturar(os.path.join(carpeta, f"f{numero + 1:05d}.png"))
+        navegador.capturar(fotograma(carpeta, numero + 1))
     # El ultimo fotograma se guarda ANTES de la transicion: es el que mira el
     # plano siguiente, y lo que tiene que mirar es este plano limpio, no este
     # plano mezclado con el anterior.
-    _guardar_ultimo(os.path.join(carpeta, f"f{total:05d}.png"), tarea["ultimo"])
+    _guardar_ultimo(fotograma(carpeta, total), tarea["ultimo"])
 
     corte = tarea.get("corte") or {}
     pintados = 0
