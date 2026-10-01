@@ -69,6 +69,11 @@
   --velo: rgba(6, 7, 10, .92);
   --velo-suave: rgba(10, 11, 14, .82);
   --sombra: 0 14px 40px rgba(0, 0, 0, .6);
+  /* rediseno 01-10-2026: tarjetas, brillo del boton principal y documentales */
+  --sombra-tarjeta: 0 8px 24px rgba(0, 0, 0, .25);
+  --brillo-acento: rgba(108, 140, 255, .28);
+  --documental: #7fd1ff;
+  --fondo-doc: #10304a;
 
   --alto: 46px;            /* alto de la cabecera */
   --lateral: 360px;
@@ -2451,3 +2456,219 @@ button.avisa:hover:not(:disabled) { border-color: var(--aviso); }
 }
 .previa-feedback .aportadas { margin: 6px 0 8px; }
 .previa-feedback .zona-suelta { padding: 9px 11px; font-size: 12px; }
+
+/* ======================================================================
+   REDISENO 01-10-2026: la casa del modo light por zonas (Estilos, Shorts,
+   Documentales), cada estilo como una carpeta con sus videos, e Ideas.
+   Mas aire, tarjetas con imagen, jerarquia clara. Los colores siguen
+   saliendo de :root (ver arriba): aqui solo hay formas.
+   ====================================================================== */
+
+body {
+  font-family: "Inter", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#cabecera {
+  background: linear-gradient(180deg, var(--panel), var(--bg));
+  border-bottom-color: var(--linea-suave);
+}
+#cabecera h1 {
+  background: linear-gradient(90deg, var(--acento), var(--acento2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  font-weight: 800; letter-spacing: .18em;
+}
+button { transition: border-color .15s, background .15s, transform .1s, box-shadow .15s; }
+button.primario {
+  background: linear-gradient(135deg, var(--acento), var(--acento2));
+  border-color: transparent; color: var(--blanco);
+  box-shadow: 0 4px 14px var(--brillo-acento);
+}
+button.primario:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px var(--brillo-acento); }
+button.enlace { background: none; border: none; padding: 0; color: var(--acento); cursor: pointer; }
+
+.casa-light { padding-bottom: 40px; }
+.casa-light .light-cab.seccion { margin: 30px 0 14px; align-items: center; }
+.casa-light .light-cab.seccion h2 { font-size: 18px; letter-spacing: -.01em; }
+
+/* ---- las zonas: una barra de pestanas grande, centrada */
+.zonas-light {
+  display: flex; gap: 6px; justify-content: center; margin: 4px auto 22px;
+  padding: 5px; width: fit-content; max-width: 100%;
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 14px;
+}
+.zonas-light .zona {
+  display: flex; align-items: center; gap: 8px; padding: 9px 18px;
+  border: none; background: transparent; border-radius: 10px;
+  color: var(--tenue); font-weight: 600; font-size: 14px;
+}
+.zonas-light .zona:hover:not(:disabled) { color: var(--texto); background: var(--hover); }
+.zonas-light .zona.activa {
+  color: var(--texto); background: var(--marcado);
+  box-shadow: inset 0 0 0 1px var(--acento-borde);
+}
+.zonas-light .zona .ico { color: var(--acento); font-size: 15px; }
+
+/* ---- tarjetas de estilo: mas presencia */
+.galeria-estilos { gap: 18px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.galeria-estilos .ficha-estilo {
+  border-radius: 16px; background: var(--panel);
+  box-shadow: var(--sombra-tarjeta);
+  transition: transform .15s, border-color .15s, box-shadow .15s;
+}
+.galeria-estilos .ficha-estilo:hover {
+  transform: translateY(-2px); border-color: var(--acento-borde);
+}
+.galeria-estilos .cuerpo { padding: 12px 14px 14px; }
+.galeria-estilos .nombre { font-size: 15px; }
+.cuentas-estilo {
+  display: inline-block; margin: 2px 0 8px; padding: 2px 9px; border-radius: 999px;
+  background: var(--info-fondo); color: var(--acento); font-size: 11.5px; font-weight: 600;
+}
+
+/* ---- tarjetas de video */
+.rejilla-videos {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); align-items: start;
+}
+.rejilla-videos.verticales { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.tarjeta-video {
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 14px;
+  transition: transform .15s, border-color .15s;
+}
+.tarjeta-video:hover { transform: translateY(-2px); border-color: var(--acento-borde); }
+.tarjeta-video .abrir-v {
+  display: block; padding: 0; border: none; background: none; text-align: left;
+  color: inherit; border-radius: 0; width: 100%;
+}
+.tarjeta-video .cara-v {
+  position: relative; aspect-ratio: 16 / 9; background: var(--lienzo); overflow: hidden;
+}
+.rejilla-videos.verticales .tarjeta-video .cara-v { aspect-ratio: 9 / 14; }
+.tarjeta-video .cara-v img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tarjeta-video .cara-v .sin-cara {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  font-size: 34px; font-weight: 800; color: var(--tenue2);
+  background: linear-gradient(135deg, var(--hueco), var(--marcado));
+}
+.tarjeta-video .sellos { position: absolute; left: 8px; top: 8px; display: flex; gap: 5px; flex-wrap: wrap; }
+.tarjeta-video .cuerpo-v { padding: 10px 12px 4px; }
+.tarjeta-video .cuerpo-v .nombre {
+  font-weight: 600; font-size: 14px; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tarjeta-video .acciones-v { display: flex; gap: 6px; align-items: center; padding: 6px 10px 10px; flex-wrap: wrap; }
+
+.sello-v {
+  display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+  font-weight: 600; background: var(--velo-suave); color: var(--texto);
+  border: 1px solid var(--linea);
+}
+.sello-v.ok { color: var(--ok); }
+.sello-v.curso { color: var(--aviso); }
+.sello-v.doc { color: var(--documental); }
+
+/* ---- la carpeta de un estilo */
+.migas { display: flex; gap: 8px; align-items: center; color: var(--tenue2); margin-bottom: 12px; font-size: 13px; }
+.migas b { color: var(--texto); font-weight: 600; }
+.estilo-hero {
+  display: grid; grid-template-columns: minmax(220px, 340px) minmax(0, 1fr); gap: 24px;
+  padding: 18px; border-radius: 18px; margin-bottom: 18px;
+  background: radial-gradient(120% 140% at 0% 0%, var(--marcado), var(--panel) 60%);
+  border: 1px solid var(--linea);
+}
+.estilo-hero .hero-cara { border-radius: 12px; overflow: hidden; background: var(--lienzo); aspect-ratio: 32 / 27; }
+.estilo-hero .hero-cara img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.estilo-hero .hero-info { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.estilo-hero .hero-titulo { display: flex; align-items: center; gap: 10px; position: relative; }
+.estilo-hero h1 { font-size: 26px; letter-spacing: -.02em; line-height: 1.15; }
+.estilo-hero .esquina { position: relative; }
+.estilo-hero .menu-estilo {
+  position: absolute; right: 0; top: 30px; z-index: 3; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 9px; overflow: hidden; min-width: 130px;
+}
+.estilo-hero .menu-estilo.plegado { display: none; }
+.estilo-hero .menu-estilo button { border: none; border-radius: 0; text-align: left; padding: 8px 12px; }
+.estilo-hero .puntos { padding: 2px 9px; border-radius: 8px; }
+.estilo-hero .vinetas { margin: 2px 0 0; padding: 0; list-style: none; }
+.estilo-hero .vinetas li { color: var(--tenue); font-size: 13px; line-height: 1.6; }
+.estilo-hero .vinetas .ico { display: inline-block; width: 22px; }
+.hero-acciones { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 8px; }
+.hero-acciones button { padding: 9px 16px; border-radius: 10px; font-weight: 600; }
+
+.pestanas-estilo {
+  display: flex; gap: 4px; border-bottom: 1px solid var(--linea); margin: 6px 0 18px;
+  overflow-x: auto;
+}
+.pestanas-estilo .pestana-e {
+  border: none; background: none; border-radius: 0; padding: 10px 14px;
+  color: var(--tenue); font-weight: 600; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; display: flex; gap: 8px; align-items: center; white-space: nowrap;
+}
+.pestanas-estilo .pestana-e:hover:not(:disabled) { color: var(--texto); border-color: transparent; }
+.pestanas-estilo .pestana-e.activa { color: var(--texto); border-bottom-color: var(--acento); }
+.pestanas-estilo .cuenta {
+  font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--hueco); color: var(--tenue);
+}
+.pestanas-estilo .activa .cuenta { background: var(--info-fondo); color: var(--acento); }
+
+.vacio-seccion {
+  display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center;
+  padding: 40px 16px; border: 1px dashed var(--linea); border-radius: 14px; color: var(--tenue);
+}
+
+.bloque-shorts {
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 14px;
+  padding: 16px 18px; margin: 4px 0 8px;
+}
+
+/* ---- documentales e ideas */
+.doc-hero {
+  padding: 22px; border-radius: 18px; margin-bottom: 16px;
+  background: radial-gradient(120% 160% at 100% 0%, var(--fondo-doc), var(--panel) 62%);
+  border: 1px solid var(--linea);
+}
+.doc-hero h2 { font-size: 22px; margin-bottom: 6px; }
+.doc-hero p { color: var(--tenue); max-width: 75ch; margin: 0 0 10px; }
+.doc-hero .fila { gap: 10px; display: flex; flex-wrap: wrap; }
+.doc-hero input[type=text] { min-width: 220px; flex: 1; }
+.rejilla-elegir { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); margin-top: 12px; }
+.elegir-estilo {
+  display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden;
+  border-radius: 12px; background: var(--hueco); text-align: left;
+}
+.elegir-estilo img, .elegir-estilo .sin-cara { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; }
+.elegir-estilo span { padding: 8px 10px; font-weight: 600; font-size: 13px; }
+.elegir-estilo:hover:not(:disabled) { border-color: var(--acento); transform: translateY(-1px); }
+
+.nicho { background: var(--panel); border: 1px solid var(--linea); border-radius: 14px; padding: 16px 18px; }
+.nicho p { margin: 0 0 10px; }
+.nicho-resumen { font-size: 15px; line-height: 1.6; }
+.nicho-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 6px 0 12px; }
+.nicho-lista { background: var(--hueco); border-radius: 10px; padding: 10px 14px; }
+.nicho-lista h4 { font-size: 13px; margin-bottom: 4px; }
+.nicho-lista ul, .mejoras { margin: 0; padding-left: 18px; color: var(--tenue); line-height: 1.6; }
+.mejoras li { margin-bottom: 6px; color: var(--texto); }
+.nicho-hueco { padding: 10px 14px; border-radius: 10px; background: var(--info-fondo); }
+.rejilla-ideas { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.idea {
+  display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 14px;
+  background: var(--panel); border: 1px solid var(--linea);
+}
+.idea .sellos { display: flex; gap: 6px; }
+.idea h3 { font-size: 16px; line-height: 1.3; }
+.idea .gancho { margin: 0; font-style: italic; color: var(--texto); }
+.idea p.meta { margin: 0; }
+.idea details summary { cursor: pointer; color: var(--acento); font-size: 13px; }
+.idea .material { white-space: pre-wrap; font-size: 13px; color: var(--tenue); margin-top: 6px; }
+.idea button.primario { margin-top: auto; align-self: flex-start; }
+
+@media (max-width: 760px) {
+  .estilo-hero { grid-template-columns: 1fr; padding: 14px; }
+  .estilo-hero .hero-cara { aspect-ratio: 16 / 9; }
+  .hero-acciones button { flex: 1 1 auto; }
+  .estilo-hero h1 { font-size: 21px; }
+  .nicho-columnas { grid-template-columns: 1fr; }
+  .zonas-light .zona { padding: 8px 12px; font-size: 13px; }
+  .rejilla-videos { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+}

@@ -862,12 +862,28 @@ def listar_proyectos():
             # un short hecho DESDE CERO con un canal de shorts no sale de
             # ningun video, pero tambien es un short
             "short": bool(ficha.get(CONFIG_SHORT) or ficha.get(CONFIG_SHORT_DE)),
+            "documental": bool(ficha.get(CONFIG_DOCUMENTAL)),
+            # la imagen del primer plano, para la tarjeta del video en la
+            # galeria. Ruta relativa al proyecto (la sirve /archivo)
+            "miniatura": _primer_plano_de(ficha.get("raiz")),
             # si ya hay MP4 montado: es de lo unico que se puede sacar un
             # recorte gratis. Se mira el disco, no el estado (que es caro).
             "tiene_mp4": bool(ficha.get("raiz") and glob.glob(os.path.join(
                 ficha["raiz"], "pasos", "render", "v*", "video.mp4"))),
         })
     return {"proyectos": fichas, "raiz": raiz_proyectos()}
+
+
+def _primer_plano_de(raiz):
+    """La imagen del primer plano de la ultima version de assets, o ''."""
+    if not raiz:
+        return ""
+    for version in sorted(glob.glob(os.path.join(raiz, "pasos", "assets", "v*")),
+                          reverse=True):
+        planos = sorted(glob.glob(os.path.join(version, "escenas", "S*.png")))
+        if planos:
+            return os.path.relpath(planos[0], raiz).replace(os.sep, "/")
+    return ""
 
 
 #: Tope del nombre visible de un proyecto. No lo pide ningun formato: es que la
@@ -977,6 +993,10 @@ TOLERANCIA_SHORT = 0.10
 CONFIG_SHORT_DE = "short_de"
 #: Y la marca de un short hecho desde cero con un canal de shorts.
 CONFIG_SHORT = "short"
+#: Video del MODO DOCUMENTAL (planos con video real, pasos/reales.py). Sigue al
+#: param `video_real` del render: lo pone crear el video desde la zona
+#: Documentales y lo actualiza cambiar ese selector. La galeria los separa.
+CONFIG_DOCUMENTAL = "documental"
 
 #: Lo que se le anade al brief. Un short NO es el video largo recortado: pide
 #: su propio guion, con el gancho en la primera frase y una sola idea.
@@ -1585,6 +1605,14 @@ def fijar_params(pid: str, paso: str, cuerpo: dict = Body(default=None)):
         except Exception as fallo:  # noqa: BLE001
             ctx.bitacora.anotar("aviso", paso_id,
                                 {"propagar_dependencias": str(fallo)})
+
+    # EL MODO DOCUMENTAL SIGUE A SU SELECTOR: encenderlo en un video cualquiera
+    # lo lleva a la zona Documentales, y apagarlo lo devuelve a su estilo
+    if paso_id == "render" and "video_real" in nuevos:
+        documental = bool(str(nuevos.get("video_real") or "").strip())
+        if bool(ctx.proyecto.config.get(CONFIG_DOCUMENTAL)) != documental:
+            ctx.proyecto.config[CONFIG_DOCUMENTAL] = documental
+            ctx.proyecto.guardar_config()
 
     afectados = [p["id"] for p in PASOS
                  if ctx.estado.estado_de(p["id"]) != antes[p["id"]]]
@@ -9202,6 +9230,31 @@ def generar_video(pid: str, cuerpo: dict = Body(default=None)):
             "eventos": f"/api/trabajos/{trabajo_id}/eventos"}
 
 
+@app.get("/api/presets-light/{preset_id}/ideas")
+def leer_ideas_light(preset_id: str):
+    """Lo ultimo que se estudio del nicho de este estilo (pasos/ideas.py)."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return PASOS_MODULOS.ideas.leer(preset_id)
+
+
+@app.post("/api/presets-light/{preset_id}/ideas")
+def estudiar_ideas_light(preset_id: str, cuerpo: dict = Body(default=None)):
+    """Lanza el estudio del nicho y las ideas de video. Gratis (suscripcion de
+    Claude), unos minutos; la pantalla mira GET hasta que este listo."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = _cuerpo(cuerpo)
+    hechos = [f.get("nombre") or f.get("id")
+              for f in listar_proyectos().get("proyectos") or []
+              if f.get("estilo_light") == preset_id]
+    try:
+        return PASOS_MODULOS.ideas.estudiar(preset_id, hechos=hechos,
+                                            enfoque=str(datos.get("enfoque") or ""))
+    except ValueError as fallo:
+        raise ErrorApi(404, str(fallo))
+
+
 @app.post("/api/presets-light/{preset_id}/video", status_code=201)
 def crear_video_light(preset_id: str, cuerpo: dict = Body(default=None)):
     """Un proyecto de video nuevo con ese estilo ya aplicado. -> la ficha.
@@ -9276,6 +9329,15 @@ def crear_video_light(preset_id: str, cuerpo: dict = Body(default=None)):
         datos = dict(datos, formato="vertical")
         ctx.estado.actualizar_params("brief", {"tolerancia": TOLERANCIA_SHORT})
     avisos = _sembrar_video_light(ctx, datos)
+    # UN DOCUMENTAL: lo crea la zona Documentales. Nace con los videos reales
+    # encendidos (mezcla salvo que pida el maximo) y marcado para esa zona
+    modo_real = str(datos.get("documental") or "").strip().lower()
+    if modo_real:
+        if modo_real not in PASOS_MODULOS.reales.MODOS:
+            modo_real = "mezcla"
+        ctx.estado.actualizar_params("render", {"video_real": modo_real})
+        ctx.proyecto.config[CONFIG_DOCUMENTAL] = True
+        ctx.proyecto.guardar_config()
     ctx.bitacora.anotar("video_light_creado", None, {
         "preset": preset_id, "estilo": ficha_preset.get("nombre"),
         "nombre": nombre, "avisos": avisos})

@@ -5328,6 +5328,8 @@ function pintarLightAhora() {
     if (APP.light.vista === 'crear') contenido.appendChild(vistaCrearLight());
     else if (APP.light.vista === 'generando') contenido.appendChild(vistaGenerandoLight());
     else if (APP.light.vista === 'preset') contenido.appendChild(vistaPresetLight());
+    else if (APP.light.vista === 'estilo') contenido.appendChild(vistaEstiloLight());
+    else if (APP.light.vista === 'ideas') contenido.appendChild(vistaIdeasLight());
     else if (APP.light.vista === 'elegido') {
       /* TRES VISTAS DENTRO DE «elegido», y la elige LO QUE HAY: el encargo
          mientras no haya vídeo, el guion en cuanto lo hay, y el vídeo cuando se
@@ -5365,25 +5367,37 @@ function irALight(vista, extra) {
 
 /* ------------------------------------------------------------- la galería */
 
-/* DOS ZONAS: VÍDEOS Y SHORTS. Cada una con su portada: sus estilos (los
-   canales de shorts son estilos marcados), sus vídeos y su forma de crear. La
+/* TRES ZONAS: ESTILOS, SHORTS Y DOCUMENTALES. Estilos es la casa: cada estilo
+   es una carpeta con SUS vídeos y SUS shorts dentro (`vistaEstiloLight`).
+   Shorts junta los canales de shorts y las tres formas de sacar uno, y
+   Documentales los vídeos con planos reales de banco (pasos/reales.py). La
    zona elegida se recuerda en este navegador. */
+const ZONAS_LIGHT = [
+  ['videos', '▦', 'Estilos'],
+  ['shorts', '▯', 'Shorts'],
+  ['documentales', '◉', 'Documentales'],
+];
+
 function zonaLight() {
-  try { return localStorage.getItem('estudio.light.zona') === 'shorts' ? 'shorts' : 'videos'; }
-  catch (e) { return 'videos'; }
+  try {
+    const z = localStorage.getItem('estudio.light.zona');
+    return ZONAS_LIGHT.some(([id]) => id === z) ? z : 'videos';
+  } catch (e) { return 'videos'; }
+}
+
+function irAZonaLight(id) {
+  try { localStorage.setItem('estudio.light.zona', id); } catch (e) { /* sin almacén */ }
+  irALight('galeria');
 }
 
 function selectorZonaLight() {
-  const actual = zonaLight();
-  const tira = h('div', { clase: 'tira-modos zonas' });
-  [['videos', '▭ Vídeos'], ['shorts', '▯ Shorts']].forEach(([id, texto]) => {
+  const actual = ['estilo', 'ideas'].includes(APP.light.vista) ? 'videos' : zonaLight();
+  const tira = h('nav', { clase: 'zonas-light', 'aria-label': 'Zonas' });
+  ZONAS_LIGHT.forEach(([id, icono, texto]) => {
     tira.appendChild(h('button', {
-      clase: 'mini' + (id === actual ? ' activo' : ''),
-      onclick: () => {
-        try { localStorage.setItem('estudio.light.zona', id); } catch (e) { /* sin almacén */ }
-        pintarLight();
-      },
-    }, texto));
+      clase: 'zona' + (id === actual ? ' activa' : ''),
+      onclick: () => irAZonaLight(id),
+    }, h('span', { clase: 'ico' }, icono), texto));
   });
   return tira;
 }
@@ -5403,36 +5417,78 @@ async function marcarCanalShort(ficha, deShorts) {
   } catch (e) { toast(e.message, true); }
 }
 
+/* ¿De qué estilo es este vídeo? Lo dice el propio proyecto (`estilo_light`).
+   Uno sin estilo, o con un estilo ya borrado, va a «Otros vídeos»: nada se
+   pierde de vista por haber borrado su estilo. */
+function videosDeEstilo(id) { return videosLight().filter(v => v.estilo_light === id); }
+
+function cuentasDeEstilo(id) {
+  const suyos = videosDeEstilo(id);
+  const ids = new Set(suyos.map(v => v.id));
+  const recortes = (shortsLight().recortes || []).filter(r => ids.has(r.pid)).length;
+  return {
+    videos: suyos.filter(v => !esShortVideo(v) && !v.documental).length,
+    shorts: suyos.filter(esShortVideo).length + recortes,
+    documentales: suyos.filter(v => v.documental && !esShortVideo(v)).length,
+  };
+}
+
+function textoCuentas(c) {
+  const partes = [];
+  if (c.videos) partes.push(`${c.videos} vídeo${c.videos === 1 ? '' : 's'}`);
+  if (c.documentales) partes.push(`${c.documentales} documental${c.documentales === 1 ? '' : 'es'}`);
+  if (c.shorts) partes.push(`${c.shorts} short${c.shorts === 1 ? '' : 's'}`);
+  return partes.join(' · ') || 'sin vídeos todavía';
+}
+
+function abrirEstiloLight(ficha) {
+  irALight('estilo', { estiloAbierto: ficha.id });
+}
+
+function recientesPrimero(lista) {
+  return lista.slice().sort((a, b) =>
+    String(b.actualizado || '').localeCompare(String(a.actualizado || '')));
+}
+
+/* LA CASA: los estilos en tarjetas, y debajo lo último que se tocó para
+   retomarlo de un clic. La lista completa de cada estilo está DENTRO de él. */
 function vistaGaleriaLight() {
-  const caja = h('div', {});
+  const caja = h('div', { clase: 'casa-light' });
   caja.appendChild(selectorZonaLight());
   if (zonaLight() === 'shorts') {
     caja.appendChild(vistaShortsLight());
     return caja;
   }
+  if (zonaLight() === 'documentales') {
+    caja.appendChild(vistaDocumentalesLight());
+    return caja;
+  }
   const fichas = presetsLight().filter(f => !esCanalShort(f.id));
-  caja.appendChild(h('div', { clase: 'light-cab' },
-    h('h2', {}, 'Tus estilos'),
-    h('span', { clase: 'meta' }, fichas.length
-      ? `${fichas.length} estilo${fichas.length === 1 ? '' : 's'}`
-      : 'una estética, un tono, una voz y un idioma')));
-
+  caja.appendChild(cabeceraSeccion('Tus estilos',
+    fichas.length ? `${fichas.length} estilo${fichas.length === 1 ? '' : 's'} · cada uno guarda sus vídeos y sus shorts`
+      : 'una estética, un tono, una voz y un idioma'));
   const rejilla = h('div', { clase: 'galeria-estilos' });
   fichas.forEach(ficha => rejilla.appendChild(tarjetaEstiloLight(ficha)));
   rejilla.appendChild(tarjetaNuevoEstilo(fichas.length));
   caja.appendChild(rejilla);
 
-  /* TUS VÍDEOS, debajo de los estilos. Aquí es donde se aterriza al volver —de
-     una recarga, del móvil, de otro día— y sin esta lista un vídeo a medio
-     generar no tenía desde dónde retomarse: seguía corriendo en el servidor y
-     no había ningún camino hasta él. */
-  const videos = videosLight().filter(v => !esShortVideo(v));
-  if (videos.length) {
-    caja.appendChild(h('div', { clase: 'light-cab' },
-      h('h2', {}, 'Tus vídeos'),
-      h('span', { clase: 'meta' }, `${videos.length} con este modo`)));
-    const lista = h('div', { clase: 'videos-light' });
-    videos.forEach(video => lista.appendChild(filaVideoLista(video)));
+  /* SEGUIR DONDE LO DEJASTE. Al volver --de una recarga, del móvil, de otro
+     día-- lo primero que se busca es el vídeo de ayer. Cuatro, los más
+     recientes, de cualquier estilo. */
+  const recientes = recientesPrimero(videosLight()).slice(0, 4);
+  if (recientes.length) {
+    caja.appendChild(cabeceraSeccion('Seguir donde lo dejaste', 'lo último que has tocado'));
+    const fila = h('div', { clase: 'rejilla-videos' });
+    recientes.forEach(v => fila.appendChild(tarjetaVideoLight(v, { conEstilo: true })));
+    caja.appendChild(fila);
+  }
+
+  const conocidos = new Set(presetsLight().map(f => f.id));
+  const huerfanos = recientesPrimero(videosLight().filter(v => !conocidos.has(v.estilo_light)));
+  if (huerfanos.length) {
+    caja.appendChild(cabeceraSeccion('Otros vídeos', 'sin estilo, o de un estilo que ya no está'));
+    const lista = h('div', { clase: 'rejilla-videos' });
+    huerfanos.forEach(v => lista.appendChild(tarjetaVideoLight(v)));
     caja.appendChild(lista);
   }
 
@@ -5464,21 +5520,442 @@ function vistaGaleriaLight() {
   return caja;
 }
 
-/* PULSAR UNA TARJETA LA ELIGE Y PASA AL SIGUIENTE PASO, no la abre. Lo que se
-   hace con un estilo el 95 % de las veces es usarlo para un vídeo; editarlo es
-   lo raro, y por eso vive en el menú de los tres puntos junto a duplicarlo. */
+function cabeceraSeccion(titulo, sub, ...extra) {
+  return h('div', { clase: 'light-cab seccion' },
+    h('h2', {}, titulo),
+    sub ? h('span', { clase: 'meta' }, sub) : null,
+    h('span', { clase: 'crece' }),
+    ...extra);
+}
+
+/* UNA TARJETA DE VÍDEO: la imagen de su primer plano, el nombre, en qué punto
+   está y lo que se hace con él. Abrir es pulsar la tarjeta; renombrar y
+   apartar van aparte (un botón dentro de otro no es HTML válido). */
+function tarjetaVideoLight(video, opciones) {
+  const o = opciones || {};
+  const estilo = o.conEstilo ? fichaLight(video.estilo_light) : null;
+  const sellos = h('div', { clase: 'sellos' },
+    video.tiene_mp4 ? h('span', { clase: 'sello-v ok' }, 'Montado')
+      : h('span', { clase: 'sello-v curso' }, 'En curso'),
+    esShortVideo(video) ? h('span', { clase: 'sello-v' }, 'Short') : null,
+    video.documental ? h('span', { clase: 'sello-v doc' }, 'Documental') : null);
+  const cara = video.miniatura
+    ? h('img', { src: API.archivo(video.id, video.miniatura), alt: '', loading: 'lazy' })
+    : h('div', { clase: 'sin-cara' }, (video.nombre || video.id || '?').slice(0, 1).toUpperCase());
+  const acciones = h('div', { clase: 'acciones-v' },
+    o.atajosShort && video.tiene_mp4 && !esShortVideo(video) ? h('button', {
+      clase: 'mini', title: 'Un short vertical sacado de este vídeo ya montado: 0 $',
+      onclick: () => prepararShortDe(video, 'recorte'),
+    }, '✂ Short gratis') : null,
+    o.atajosShort && !esShortVideo(video) ? h('button', {
+      clase: 'mini', title: 'Un short con guion nuevo y el mismo material: ~1–2 $',
+      onclick: () => prepararShortDe(video, 'video'),
+    }, '＋ Short') : null,
+    h('span', { clase: 'crece' }),
+    h('button', {
+      clase: 'mini fantasma', title: 'Cambiar el nombre',
+      'aria-label': `Cambiar el nombre de ${video.nombre || video.id}`,
+      onclick: () => renombrarVideoLight(video),
+    }, '✏️'),
+    h('button', {
+      clase: 'mini fantasma peligro', title: 'A la papelera de proyectos',
+      onclick: () => apartarVideoLight(video),
+    }, 'Apartar'));
+  return h('div', { clase: 'tarjeta-video' + (esShortVideo(video) ? ' vertical' : '') },
+    h('button', {
+      clase: 'abrir-v', title: 'Abrir este vídeo',
+      onclick: () => abrirVideoLight(video.id),
+    },
+      h('div', { clase: 'cara-v' }, cara, sellos),
+      h('div', { clase: 'cuerpo-v' },
+        h('div', { clase: 'nombre' }, video.nombre || video.id),
+        h('div', { clase: 'meta' }, [estilo ? estilo.nombre : '', fechaCorta(video.actualizado) || '']
+          .filter(Boolean).join(' · ')))),
+    acciones);
+}
+
+/* Los atajos de short de una tarjeta: dejan elegidos el vídeo y el modo en el
+   creador de shorts de su estilo, y bajan hasta él. */
+function prepararShortDe(video, modo) {
+  const l = APP.light;
+  l.modoShort = modo;
+  l.shortOrigen = video.id;
+  l.recorteOrigen = video.id;
+  l.pestanaEstilo = 'shorts';
+  irALight('estilo', { estiloAbierto: video.estilo_light || l.estiloAbierto });
+  setTimeout(() => {
+    const nodo = document.querySelector('.bloque-shorts');
+    if (nodo) nodo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 60);
+}
+
+/* =================================================== UN ESTILO, POR DENTRO
+ *
+ * La carpeta de un estilo: arriba quién es y lo que se crea con él (vídeo,
+ * documental, short, ideas), y debajo TODO lo que se ha hecho con él en tres
+ * pestañas. Los shorts se sacan desde aquí mismo, sin cambiar de zona.
+ */
+const PESTANAS_ESTILO = [
+  ['videos', 'Vídeos'], ['documentales', 'Documentales'], ['shorts', 'Shorts'],
+];
+
+function heroEstilo(ficha, extra) {
+  const deShorts = esCanalShort(ficha.id);
+  const vinetas = ficha.vinetas || [];
+  return h('section', { clase: 'estilo-hero' },
+    h('div', { clase: 'hero-cara' }, ficha.hay_miniatura
+      ? h('img', { src: API.presetCanalMiniatura(ficha.id, ficha.modificado), alt: '' })
+      : h('div', { clase: 'sin-cara' }, 'sin muestras')),
+    h('div', { clase: 'hero-info' },
+      h('div', { clase: 'hero-titulo' },
+        h('h1', {}, ficha.nombre || ficha.id),
+        deShorts ? h('span', { clase: 'sello-v' }, 'Canal de shorts') : null,
+        h('span', { clase: 'crece' }),
+        menuDeEstilo(ficha)),
+      h('div', { clase: 'meta' }, textoCuentas(cuentasDeEstilo(ficha.id))),
+      h('ul', { clase: 'vinetas' }, ...vinetas.map(v => h('li', {},
+        h('span', { clase: 'ico' }, v.icono || '·'), v.texto || v))),
+      extra || null));
+}
+
+function migasEstilo(ficha, aqui) {
+  const deShorts = esCanalShort(ficha.id);
+  return h('div', { clase: 'migas' },
+    h('button', { clase: 'enlace', onclick: () => irAZonaLight(deShorts ? 'shorts' : 'videos') },
+      deShorts ? 'Shorts' : 'Estilos'),
+    h('span', {}, '›'),
+    aqui ? h('button', { clase: 'enlace', onclick: () => abrirEstiloLight(ficha) },
+      ficha.nombre || ficha.id) : h('b', {}, ficha.nombre || ficha.id),
+    aqui ? h('span', {}, '›') : null,
+    aqui ? h('b', {}, aqui) : null);
+}
+
+function vistaEstiloLight() {
+  const l = APP.light;
+  const ficha = fichaLight(l.estiloAbierto);
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(selectorZonaLight());
+  if (!ficha) {
+    caja.appendChild(h('div', { clase: 'pista' }, 'Ese estilo ya no existe.'));
+    return caja;
+  }
+  const deShorts = esCanalShort(ficha.id);
+  const cuentas = cuentasDeEstilo(ficha.id);
+  caja.appendChild(migasEstilo(ficha));
+  caja.appendChild(heroEstilo(ficha, h('div', { clase: 'hero-acciones' },
+    h('button', { clase: 'primario', onclick: () => elegirEstiloLight(ficha) },
+      deShorts ? '＋ Nuevo short' : '＋ Nuevo vídeo'),
+    deShorts ? null : h('button', {
+      title: 'Vídeos reales de Pexels y Pixabay donde encajan, y la IA en el resto',
+      onclick: () => elegirEstiloLight(ficha, { documental: 'mezcla' }),
+    }, '◉ Nuevo documental'),
+    h('button', {
+      title: 'Temas que encajan con este estilo y lo que funciona en su nicho',
+      onclick: () => irALight('ideas', { estiloAbierto: ficha.id }),
+    }, '💡 Ideas y nicho'))));
+
+  if (!PESTANAS_ESTILO.some(([id]) => id === l.pestanaEstilo)) l.pestanaEstilo = 'videos';
+  const tira = h('div', { clase: 'pestanas-estilo' });
+  PESTANAS_ESTILO.forEach(([id, texto]) => tira.appendChild(h('button', {
+    clase: 'pestana-e' + (id === l.pestanaEstilo ? ' activa' : ''),
+    onclick: () => { l.pestanaEstilo = id; pintarLight(); },
+  }, texto, h('span', { clase: 'cuenta' }, String(cuentas[id] || 0)))));
+  caja.appendChild(tira);
+
+  const suyos = recientesPrimero(videosDeEstilo(ficha.id));
+  if (l.pestanaEstilo === 'shorts') {
+    caja.appendChild(shortsDeEstilo(ficha, suyos));
+  } else {
+    const doc = l.pestanaEstilo === 'documentales';
+    const lista = suyos.filter(v => !esShortVideo(v) && !!v.documental === doc);
+    if (!lista.length) {
+      caja.appendChild(h('div', { clase: 'vacio-seccion' },
+        h('div', {}, doc ? 'Todavía no hay documentales con este estilo.'
+          : 'Todavía no hay vídeos con este estilo.'),
+        h('button', {
+          clase: 'primario',
+          onclick: () => elegirEstiloLight(ficha, doc ? { documental: 'mezcla' } : {}),
+        }, doc ? '◉ Hacer el primero' : '＋ Hacer el primero')));
+    } else {
+      const rejilla = h('div', { clase: 'rejilla-videos' });
+      lista.forEach(v => rejilla.appendChild(tarjetaVideoLight(v, { atajosShort: true })));
+      caja.appendChild(rejilla);
+    }
+  }
+  return caja;
+}
+
+/* LOS SHORTS DE UN ESTILO: los creadores de la zona Shorts, pero solo con los
+   vídeos de este estilo, y debajo los shorts que ya salieron de ellos. */
+function shortsDeEstilo(ficha, suyos) {
+  const l = APP.light;
+  const caja = h('div', {});
+  const normales = suyos.filter(v => !esShortVideo(v));
+  const modos = MODOS_SHORT.filter(m => m.id !== 'cero' || esCanalShort(ficha.id));
+  if (!modos.some(m => m.id === l.modoShort)) l.modoShort = 'recorte';
+  if (!l.shortSegundos) l.shortSegundos = SHORT_S.maximo;
+  const bloque = h('section', { clase: 'bloque-shorts' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, 'Nuevo short')));
+  const tira = h('div', { clase: 'tira-modos modos-short' });
+  modos.forEach(m => tira.appendChild(h('button', {
+    clase: 'mini' + (m.id === l.modoShort ? ' activo' : ''), title: m.pista,
+    onclick: () => { l.modoShort = m.id; pintarLight(); },
+  }, m.texto)));
+  bloque.appendChild(tira);
+  bloque.appendChild(h('div', { clase: 'pista' },
+    (MODOS_SHORT.find(m => m.id === l.modoShort) || {}).pista || ''));
+  if (l.modoShort === 'cero') bloque.appendChild(creadorShortCero([ficha]));
+  else if (l.modoShort === 'video') bloque.appendChild(creadorShortVideo(normales));
+  else bloque.appendChild(creadorRecorte(normales));
+  caja.appendChild(bloque);
+
+  const ids = new Set(suyos.map(v => v.id));
+  const proyectos = suyos.filter(esShortVideo);
+  const recortes = (shortsLight().recortes || []).filter(r => ids.has(r.pid));
+  caja.appendChild(cabeceraSeccion('Shorts de este estilo',
+    (proyectos.length + recortes.length) ? `${proyectos.length + recortes.length} en total`
+      : 'todavía ninguno'));
+  if (proyectos.length) {
+    const rejilla = h('div', { clase: 'rejilla-videos verticales' });
+    proyectos.forEach(v => rejilla.appendChild(tarjetaVideoLight(v)));
+    caja.appendChild(rejilla);
+  }
+  if (recortes.length) {
+    caja.appendChild(h('div', { clase: 'meta sub-shorts' }, 'Recortes gratis'));
+    const lista = h('div', { clase: 'videos-light' });
+    recortes.forEach(r => lista.appendChild(filaRecorte(r)));
+    caja.appendChild(lista);
+  }
+  return caja;
+}
+
+/* ========================================================= DOCUMENTALES
+ *
+ * Vídeos con planos REALES de Pexels y Pixabay (gratis) donde encajan con lo
+ * que se narra, y la IA en el resto (pasos/reales.py). Se hacen con cualquier
+ * estilo: el estilo pone la voz, el tono y la ilustración de lo que no es real.
+ */
+const CLAVES_DOC = { cargadas: false, pidiendo: false, pexels: false, pixabay: false };
+
+function cargarClavesDoc() {
+  if (CLAVES_DOC.cargadas || CLAVES_DOC.pidiendo) return;
+  CLAVES_DOC.pidiendo = true;
+  pedir(API.claves()).then(d => {
+    CLAVES_DOC.pexels = !!((d || {}).pexels || {}).puesta;
+    CLAVES_DOC.pixabay = !!((d || {}).pixabay || {}).puesta;
+    CLAVES_DOC.cargadas = true;
+    pintarLight();
+  }).catch(() => { CLAVES_DOC.cargadas = true; })
+    .finally(() => { CLAVES_DOC.pidiendo = false; });
+}
+
+function vistaDocumentalesLight() {
+  const l = APP.light;
+  const caja = h('div', { clase: 'zona-doc' });
+  caja.appendChild(h('section', { clase: 'doc-hero' },
+    h('h2', {}, 'Documentales'),
+    h('p', {}, 'Planos con vídeo REAL de bancos gratuitos (Pexels y Pixabay, con '
+      + 'licencia para YouTube) donde encajan con lo que se cuenta, y la IA para '
+      + 'el resto: los momentos de la historia, lo que no existe en vídeo y lo que '
+      + 'lleva texto. Claude elige qué va en cada plano, sin coste.')));
+
+  cargarClavesDoc();
+  if (CLAVES_DOC.cargadas && !CLAVES_DOC.pexels && !CLAVES_DOC.pixabay) {
+    caja.appendChild(h('div', { clase: 'caja-aviso' },
+      h('b', {}, 'Falta una clave para buscar vídeos reales. '),
+      'Crea una gratis en pexels.com/api o pixabay.com/api/docs y pégala en ',
+      h('button', { clase: 'enlace', onclick: () => $('#btn-config').click() },
+        'Configuración › Claves › Vídeo'),
+      '. Sin clave, el documental sale entero con IA.'));
+  }
+
+  if (!['mezcla', 'maximo'].includes(l.modoDocumental)) l.modoDocumental = 'mezcla';
+  const modos = h('div', { clase: 'tira-modos' });
+  [['mezcla', 'Mezcla — real donde encaje'], ['maximo', 'Máximo real']]
+    .forEach(([id, texto]) => modos.appendChild(h('button', {
+      clase: 'mini' + (l.modoDocumental === id ? ' activo' : ''),
+      onclick: () => { l.modoDocumental = id; pintarLight(); },
+    }, texto)));
+  const estilos = presetsLight().filter(f => !esCanalShort(f.id));
+  const elegir = h('div', { clase: 'rejilla-elegir' });
+  estilos.forEach(ficha => elegir.appendChild(h('button', {
+    clase: 'elegir-estilo',
+    onclick: () => elegirEstiloLight(ficha, { documental: l.modoDocumental }),
+  },
+    ficha.hay_miniatura
+      ? h('img', { src: API.presetCanalMiniatura(ficha.id, ficha.modificado), alt: '', loading: 'lazy' })
+      : h('div', { clase: 'sin-cara' }, '·'),
+    h('span', {}, ficha.nombre || ficha.id))));
+  caja.appendChild(h('section', { clase: 'bloque-shorts' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, 'Nuevo documental'),
+      h('span', { clase: 'meta' }, 'elige cuánto real y con qué estilo')),
+    modos,
+    h('div', { clase: 'pista' }, l.modoDocumental === 'maximo'
+      ? 'Vídeo real en todo plano donde haya algo razonable; la IA solo donde no.'
+      : 'Real para dar contexto (lugares, objetos, oficios, naturaleza); la IA para '
+        + 'la historia. Más o menos uno de cada tres planos real.'),
+    estilos.length ? elegir : h('div', { clase: 'pista' }, 'Crea primero un estilo en la zona Estilos.')));
+
+  const docs = recientesPrimero(videosLight().filter(v => v.documental && !esShortVideo(v)));
+  caja.appendChild(cabeceraSeccion('Tus documentales',
+    docs.length ? `${docs.length} en total` : 'todavía ninguno'));
+  if (docs.length) {
+    const rejilla = h('div', { clase: 'rejilla-videos' });
+    docs.forEach(v => rejilla.appendChild(tarjetaVideoLight(v, { conEstilo: true, atajosShort: true })));
+    caja.appendChild(rejilla);
+  }
+  return caja;
+}
+
+/* ====================================================== IDEAS Y NICHO
+ *
+ * Claude estudia en internet el nicho del estilo y propone vídeos concretos
+ * (pasos/ideas.py). Gratis --va por la suscripción-- y tarda unos minutos, así
+ * que se lanza y la pantalla va preguntando. Cada idea se convierte en un vídeo
+ * de un clic: abre el encargo con el título y el material ya puestos.
+ */
+const IDEAS_LIGHT = { datos: {}, sondeo: null };
+
+function cargarIdeasLight(id, forzar) {
+  if (!id || (!forzar && IDEAS_LIGHT.datos[id] && IDEAS_LIGHT.datos[id].estado !== 'pensando')) return;
+  pedir(`${API.presetLight(id)}/ideas`).then(d => {
+    IDEAS_LIGHT.datos[id] = d || {};
+    if ((d || {}).estado === 'pensando') {
+      clearTimeout(IDEAS_LIGHT.sondeo);
+      IDEAS_LIGHT.sondeo = setTimeout(() => {
+        if (APP.light.vista === 'ideas') cargarIdeasLight(id, true);
+      }, 5000);
+    }
+    if (APP.light.vista === 'ideas') pintarLight();
+  }).catch(e => { IDEAS_LIGHT.datos[id] = { estado: 'error', error: e.message }; });
+}
+
+async function estudiarNichoLight(ficha) {
+  const l = APP.light;
+  try {
+    IDEAS_LIGHT.datos[ficha.id] = await pedir(`${API.presetLight(ficha.id)}/ideas`,
+      { method: 'POST', cuerpo: { enfoque: l.enfoqueIdeas || '' } });
+    toast('estudiando el nicho: tarda unos minutos, puedes seguir con otra cosa');
+    pintarLight();
+    cargarIdeasLight(ficha.id, true);
+  } catch (e) { toast(e.message, true); }
+}
+
+function hacerIdeaLight(ficha, idea) {
+  const tipo = String(idea.tipo || 'video').toLowerCase();
+  elegirEstiloLight(ficha, {
+    documental: tipo === 'documental' ? 'mezcla' : '',
+    short: tipo === 'short',
+    nombre: String(idea.titulo || '').slice(0, 60),
+    material: [idea.titulo, idea.gancho ? `Gancho: ${idea.gancho}` : '', idea.material]
+      .filter(Boolean).join('\n\n'),
+    minutos: Number(idea.minutos) || 0,
+  });
+}
+
+function listaTexto(titulo, cosas) {
+  if (!cosas || !cosas.length) return null;
+  return h('div', { clase: 'nicho-lista' }, h('h4', {}, titulo),
+    h('ul', {}, ...cosas.map(c => h('li', {}, String(c)))));
+}
+
+function vistaIdeasLight() {
+  const l = APP.light;
+  const ficha = fichaLight(l.estiloAbierto);
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(selectorZonaLight());
+  if (!ficha) {
+    caja.appendChild(h('div', { clase: 'pista' }, 'Ese estilo ya no existe.'));
+    return caja;
+  }
+  caja.appendChild(migasEstilo(ficha, 'Ideas y nicho'));
+  cargarIdeasLight(ficha.id);
+  const d = IDEAS_LIGHT.datos[ficha.id] || {};
+  const pensando = d.estado === 'pensando';
+
+  caja.appendChild(h('section', { clase: 'doc-hero' },
+    h('h2', {}, `Ideas y nicho · ${ficha.nombre || ficha.id}`),
+    h('p', {}, 'Claude busca en internet qué funciona ahora en el nicho de este estilo '
+      + '(formatos, temas, títulos, huecos) y te propone vídeos concretos con su '
+      + 'material listo. Gratis, con tu suscripción de Claude; tarda unos minutos.'),
+    h('div', { clase: 'fila' },
+      h('input', {
+        type: 'text', clase: 'crece', 'data-foco': 'enfoque-ideas',
+        placeholder: 'Opcional: en qué centrarse («más documentales», «temas de dinero», «shorts virales»)',
+        value: l.enfoqueIdeas || '',
+        oninput: ev => { l.enfoqueIdeas = ev.target.value; },
+      }),
+      h('button', {
+        clase: 'primario', disabled: pensando,
+        onclick: () => estudiarNichoLight(ficha),
+      }, pensando ? 'estudiando…' : (d.ideas ? '↻ Estudiar de nuevo' : '🔎 Estudiar el nicho')))));
+
+  if (pensando) {
+    const seg = d.desde ? Math.round(Date.now() / 1000 - d.desde) : 0;
+    caja.appendChild(h('div', { clase: 'caja-info' },
+      `Buscando y leyendo sobre el nicho… ${seg ? `(${duracionCorta(seg)})` : ''} `
+      + 'Suele tardar de 2 a 6 minutos.'));
+  }
+  if (d.estado === 'error' && d.error) {
+    caja.appendChild(cajaError(`No se ha podido estudiar el nicho: ${d.error}`));
+  }
+  if (!d.ideas) return caja;
+
+  const n = d.nicho || {};
+  caja.appendChild(cabeceraSeccion('El nicho', d.fecha ? `estudiado el ${fechaCorta(d.fecha)}` : ''));
+  caja.appendChild(h('section', { clase: 'nicho' },
+    n.resumen ? h('p', { clase: 'nicho-resumen' }, n.resumen) : null,
+    n.publico ? h('p', {}, h('b', {}, 'Público: '), n.publico) : null,
+    h('div', { clase: 'nicho-columnas' },
+      listaTexto('✅ Qué funciona', n.funciona),
+      listaTexto('⚠️ Saturado', n.saturado)),
+    n.hueco ? h('p', { clase: 'nicho-hueco' }, h('b', {}, '🎯 El hueco: '), n.hueco) : null,
+    (n.fuentes || []).length ? h('div', { clase: 'meta' },
+      'Fuentes: ' + (n.fuentes || []).slice(0, 6).join(' · ')) : null));
+
+  caja.appendChild(cabeceraSeccion('Ideas de vídeo', `${(d.ideas || []).length} propuestas`));
+  const rejilla = h('div', { clase: 'rejilla-ideas' });
+  (d.ideas || []).forEach(idea => {
+    const tipo = String(idea.tipo || 'video').toLowerCase();
+    rejilla.appendChild(h('article', { clase: 'idea' },
+      h('div', { clase: 'sellos' },
+        h('span', { clase: 'sello-v' + (tipo === 'documental' ? ' doc' : '') },
+          tipo === 'documental' ? 'Documental' : tipo === 'short' ? 'Short' : 'Vídeo'),
+        idea.minutos ? h('span', { clase: 'sello-v' }, `${idea.minutos} min`) : null),
+      h('h3', {}, idea.titulo),
+      idea.gancho ? h('p', { clase: 'gancho' }, /^[«"“]/.test(idea.gancho) ? idea.gancho : `«${idea.gancho}»`) : null,
+      idea.por_que ? h('p', { clase: 'meta' }, idea.por_que) : null,
+      h('details', {}, h('summary', {}, 'Material'),
+        h('div', { clase: 'material' }, idea.material || '')),
+      h('button', { clase: 'primario', onclick: () => hacerIdeaLight(ficha, idea) },
+        'Hacer este vídeo →')));
+  });
+  caja.appendChild(rejilla);
+
+  if ((d.mejoras || []).length) {
+    caja.appendChild(cabeceraSeccion('Sugerencias para el canal'));
+    caja.appendChild(h('section', { clase: 'nicho' },
+      h('ol', { clase: 'mejoras' }, ...(d.mejoras || []).map(m => h('li', {}, m)))));
+  }
+  return caja;
+}
+
+/* PULSAR UNA TARJETA ABRE EL ESTILO: su carpeta, con sus vídeos, sus shorts y
+   los botones de crear (`vistaEstiloLight`). Editarlo sigue siendo lo raro y
+   vive en el menú de los tres puntos junto a duplicarlo. */
 function tarjetaEstiloLight(ficha) {
   const vinetas = ficha.vinetas || [];
   return h('div', { clase: 'ficha-estilo' },
     h('button', {
-      clase: 'cara-y-cuerpo', title: 'Usar este estilo',
-      onclick: () => elegirEstiloLight(ficha),
+      clase: 'cara-y-cuerpo', title: 'Abrir este estilo',
+      onclick: () => abrirEstiloLight(ficha),
     },
       h('div', { clase: 'cara' }, ficha.hay_miniatura
         ? h('img', { src: API.presetCanalMiniatura(ficha.id, ficha.modificado), alt: '', loading: 'lazy' })
         : h('div', { clase: 'sin-cara' }, 'sin muestras')),
       h('div', { clase: 'cuerpo' },
         h('div', { clase: 'nombre' }, ficha.nombre || ficha.id),
+        h('div', { clase: 'cuentas-estilo' }, textoCuentas(cuentasDeEstilo(ficha.id))),
         h('ul', { clase: 'vinetas' },
           // el icono lo manda el servidor con cada línea (`presets_canal.vinetas_de`):
           // aquí no hay forma de saber cuál es el idioma y cuál la voz sin deducirlo
@@ -5924,20 +6401,28 @@ async function duplicarEstiloLight(ficha) {
    un botón que no lleva a ninguna parte se prueba una vez y no se vuelve a
    pulsar nunca. La elección SÍ se guarda, así que el día que exista el paso ya
    está tomada. */
-function elegirEstiloLight(ficha) {
+function elegirEstiloLight(ficha, opciones) {
+  const o = opciones || {};
   localStorage.setItem('estudio.light.estilo', ficha.id);
   /* UN CANAL DE SHORTS ABRE UN ENCARGO DE SHORT: vertical y de 15 a 60 s, y el
      vídeo se crea marcado (`short`) para que salga en «Tus shorts». Y al volver
      a un estilo normal el encargo deja de serlo, o el siguiente vídeo largo
      nacería vertical y de un minuto. */
   const e = encargoVideoLight();
-  const esShort = esCanalShort(ficha.id);
+  const esShort = esCanalShort(ficha.id) || !!o.short;
   if (esShort && !e.short) {
     Object.assign(e, { short: true, formato: 'vertical',
       duracion_objetivo_s: SHORT_S.maximo });
   } else if (!esShort && e.short) {
     Object.assign(e, { short: false, formato: 'horizontal', duracion_objetivo_s: 240 });
   }
+  /* UN DOCUMENTAL nace con los vídeos reales encendidos (el servidor pone
+     `video_real` y lo marca para su zona). Y si viene de una IDEA, el encargo
+     llega con su título y su material ya escritos. */
+  e.documental = o.documental || '';
+  if (o.nombre) e.nombre = o.nombre;
+  if (o.material) e.material = o.material;
+  if (o.minutos && !esShort) e.duracion_objetivo_s = Math.round(Math.min(30, Math.max(1, o.minutos)) * 60);
   // se empieza en el ENCARGO: elegir un estilo es el principio de un vídeo
   // nuevo. Si había uno a medias, la propia pantalla lo ofrece.
   APP.light.video.vista = 'encargo';
@@ -6602,6 +7087,8 @@ async function crearYGenerarLight(estilo) {
         guion_propio: !!e.guion_propio,
         // desde la zona Shorts con un canal de shorts: sale en «Tus shorts»
         short: !!e.short,
+        // desde la zona Documentales o el botón del estilo: con vídeos reales
+        documental: e.documental || '',
         indicaciones: e.indicaciones,
         cta: e.cta,
       },
