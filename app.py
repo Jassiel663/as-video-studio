@@ -9803,6 +9803,95 @@ def video_trabajado(ident: str, original: int = Query(default=0)):
     return FileResponse(ruta, media_type="video/mp4", headers={"Cache-Control": "no-cache"})
 
 
+class _Carpeta:
+    """Un short trabajado visto como «proyecto» para publicar: lo unico que
+    piden publicar/youtube/redes es la carpeta donde dejar su estado."""
+    def __init__(self, raiz):
+        self.raiz = raiz
+
+
+def _trabajado_para_publicar(ident, estilo=None):
+    mod = PASOS_MODULOS.trabajado
+    ficha = mod.leer(ident)
+    if not ficha:
+        raise ErrorApi(404, "ese short no existe")
+    if estilo is not None and estilo != ficha.get("estilo"):
+        ficha["estilo"] = estilo
+        mod._guardar(ident, ficha)
+    return ficha, _Carpeta(mod._ruta(ident)), mod._ruta(ident, "final.mp4")
+
+
+def _ficha_publicar_trabajado(ident, estilo=None):
+    ficha, carpeta, mp4 = _trabajado_para_publicar(ident, estilo)
+    est = ficha.get("estilo") or ""
+    pub, redes = PASOS_MODULOS.publicar, PASOS_MODULOS.redes
+    destinos = pub.destinos(est) if est else {p: "" for p in pub.PLATAFORMAS}
+    return {"estilo": est, "destinos": destinos, "short": True,
+            "subida": {p: pub.pagina_de_subida(p, destinos.get(p)) for p in pub.PLATAFORMAS},
+            "mp4": "final.mp4" if os.path.exists(mp4) else "", "miniaturas": [],
+            "seo": pub.leer_seo(carpeta),
+            "youtube": {"conexion": PASOS_MODULOS.youtube.conexion(est) if est else {},
+                        "subida": PASOS_MODULOS.youtube.leer_subida(carpeta)},
+            **{red: {"conexion": redes.conexion(red, est) if est else {},
+                     "subida": redes.leer_subida(carpeta, red)} for red in redes.REDES}}
+
+
+@app.get("/api/trabajados/{ident}/publicar")
+def leer_publicar_trabajado(ident: str, estilo: str = Query(default=None)):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return _ficha_publicar_trabajado(ident, estilo)
+
+
+@app.post("/api/trabajados/{ident}/publicar/seo")
+def seo_trabajado(ident: str, cuerpo: dict = Body(default=None)):
+    """Titulos, descripcion, etiquetas y textos de redes del short trabajado. Gratis."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = _cuerpo(cuerpo)
+    ficha, carpeta, _ = _trabajado_para_publicar(ident, datos.get("estilo"))
+    if ficha.get("estado") != "listo":
+        raise ErrorApi(400, "el short todavia no esta editado")
+    estilo = PASOS_MODULOS.presets_canal.leer(ficha.get("estilo")) if ficha.get("estilo") else None
+    PASOS_MODULOS.publicar.generar_seo(
+        carpeta, ficha.get("titulo") or ficha.get("nombre") or "Short",
+        [{"t_in": 0, "t_out": ficha.get("duracion") or 30, "narracion": ficha.get("texto") or ""}],
+        idioma=ficha.get("idioma") or "es", tipo="short", canal=(estilo or {}).get("nombre", ""))
+    return _ficha_publicar_trabajado(ident)
+
+
+@app.post("/api/trabajados/{ident}/publicar/{red}")
+def subir_trabajado(ident: str, red: str, cuerpo: dict = Body(default=None)):
+    """Sube el short trabajado a la cuenta de `red` del estilo elegido."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = _cuerpo(cuerpo)
+    ficha, carpeta, mp4 = _trabajado_para_publicar(ident, datos.get("estilo"))
+    est = ficha.get("estilo") or ""
+    if not est:
+        raise ErrorApi(400, "elige con que estilo (que cuentas) se publica")
+    seo = PASOS_MODULOS.publicar.leer_seo(carpeta)
+    titulo = ((seo.get("youtube") or {}).get("titulo")) or ficha.get("titulo") or ficha.get("nombre") or "Short"
+    try:
+        if red == "youtube":
+            yt = seo.get("youtube") or {}
+            descripcion = yt.get("descripcion") or ""
+            if "#shorts" not in descripcion.lower():
+                descripcion = (descripcion + "\n\n#shorts").strip()
+            return PASOS_MODULOS.youtube.subir(
+                carpeta, est, mp4, titulo, descripcion, yt.get("etiquetas") or [],
+                privacidad=str(datos.get("privacidad") or "private"),
+                publicar_en=str(datos.get("publicar_en") or ""), idioma=ficha.get("idioma") or "es")
+        if red in PASOS_MODULOS.redes.REDES:
+            texto = (seo.get(red) or {}).get("texto") or titulo
+            return PASOS_MODULOS.redes.subir(red, carpeta, est, mp4, titulo, texto,
+                                             modo=str(datos.get("modo") or "borrador"),
+                                             publicar_en=str(datos.get("publicar_en") or ""))
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+    raise ErrorApi(404, f"red desconocida: {red}")
+
+
 @app.delete("/api/trabajados/{ident}")
 def borrar_trabajado(ident: str):
     if PASOS_MODULOS is None:

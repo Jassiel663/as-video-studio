@@ -6353,6 +6353,129 @@ function subirTrabajado(fichero) {
   xhr.send(datos);
 }
 
+/* PUBLICAR UN SHORT TRABAJADO: elegir con qué estilo (qué cuentas), escribir
+   los textos y subir a YouTube Shorts, TikTok o Facebook, igual que un vídeo. */
+const PUB_TRAB = { datos: {}, sondeo: null, opciones: {} };
+
+function urlPubTrab(id, extra) { return `${BASE}/api/trabajados/${encodeURIComponent(id)}/publicar${extra || ''}`; }
+
+function cargarPubTrab(id, estilo, forzar) {
+  if (!forzar && PUB_TRAB.datos[id]) return;
+  const q = estilo !== undefined ? `?estilo=${encodeURIComponent(estilo)}` : '';
+  pedir(urlPubTrab(id, q)).then(d => {
+    PUB_TRAB.datos[id] = d || {};
+    clearTimeout(PUB_TRAB.sondeo);
+    const ocupado = ((d || {}).seo || {}).estado === 'pensando'
+      || ['youtube', 'tiktok', 'facebook'].some(red => ((((d || {})[red] || {}).subida) || {}).estado === 'subiendo');
+    if (ocupado) PUB_TRAB.sondeo = setTimeout(() => { if (APP.light.trabajadoAbierto === id) cargarPubTrab(id, undefined, true); }, 4000);
+    pintarLight();
+  }).catch(e => { PUB_TRAB.datos[id] = { error: e.message }; pintarLight(); });
+}
+
+function panelPublicarTrabajado(t) {
+  const d = PUB_TRAB.datos[t.id];
+  const caja = h('section', { clase: 'bloque-shorts publicar' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, `📣 Publicar «${t.titulo || t.nombre || 'Short'}»`),
+      h('span', { clase: 'crece' }),
+      h('button', { clase: 'mini fantasma', onclick: () => { APP.light.trabajadoAbierto = null; pintarLight(); } }, 'Cerrar')));
+  if (!d) { cargarPubTrab(t.id); caja.appendChild(h('div', { clase: 'cargando' }, 'cargando…')); return caja; }
+  if (d.error) { caja.appendChild(cajaError(d.error)); return caja; }
+  const seo = d.seo || {};
+  caja.appendChild(h('div', { clase: 'fila' },
+    h('span', {}, 'Publicar con las cuentas del estilo:'),
+    h('select', {
+      value: d.estilo || '',
+      onchange: ev => { PUB_TRAB.datos[t.id] = null; cargarPubTrab(t.id, ev.target.value, true); },
+    }, [h('option', { value: '' }, '— elige un estilo —')].concat(presetsLight().map(p => h('option', { value: p.id }, p.nombre || p.id)))),
+    h('span', { clase: 'crece' }),
+    h('button', {
+      clase: 'primario', disabled: seo.estado === 'pensando',
+      onclick: async () => {
+        try {
+          PUB_TRAB.datos[t.id] = await pedir(urlPubTrab(t.id, '/seo'), { method: 'POST', cuerpo: { estilo: d.estilo || '' } });
+          toast('escribiendo los textos: medio minuto');
+          cargarPubTrab(t.id, undefined, true);
+        } catch (e) { toast(e.message, true); }
+      },
+    }, seo.estado === 'pensando' ? 'escribiendo…' : (seo.youtube ? '↻ Reescribir textos' : '✍ Escribir textos SEO (gratis)'))));
+  if (seo.estado === 'error' && seo.error) caja.appendChild(cajaError(seo.error));
+  const rejilla = h('div', { clase: 'rejilla-pub' });
+  [['tiktok', 'TikTok', '♪'], ['youtube', 'YouTube Shorts', '▶'], ['instagram', 'Instagram Reels', '◎'], ['facebook', 'Facebook', 'f']]
+    .forEach(([red, nombre, ico]) => {
+      const s2 = seo[red] || {};
+      const tarjeta = h('article', { clase: 'tarjeta-pub' },
+        h('div', { clase: 'fila' }, h('span', { clase: `ico-pub ${red}` }, ico), h('b', {}, nombre), h('span', { clase: 'crece' }),
+          (d.destinos || {})[red] ? h('a', { href: d.destinos[red], target: '_blank', rel: 'noopener', clase: 'meta' }, 'la cuenta ↗') : null));
+      const poner = n => { if (n) tarjeta.appendChild(n); };
+      if (red === 'youtube') {
+        poner(campoCopiable('Título', s2.titulo));
+        poner(campoCopiable('Descripción', s2.descripcion, true));
+      } else {
+        poner(campoCopiable('Texto', s2.texto, true));
+      }
+      tarjeta.appendChild(h('div', { clase: 'fila acciones-pub' },
+        h('a', { clase: 'boton mini', href: `${BASE}/api/trabajados/${encodeURIComponent(t.id)}/video`, download: `${(t.titulo || 'short').slice(0, 50)}.mp4` }, '⬇ Vídeo'),
+        h('span', { clase: 'crece' }),
+        h('a', { clase: 'boton mini', href: (d.subida || {})[red] || '#', target: '_blank', rel: 'noopener' }, `Abrir ${nombre} ↗`)));
+      if (red !== 'instagram') poner(subidaTrabajado(t, d, red, nombre));
+      rejilla.appendChild(tarjeta);
+    });
+  caja.appendChild(rejilla);
+  return caja;
+}
+
+function subidaTrabajado(t, d, red, nombre) {
+  const info = d[red] || {};
+  const sub = info.subida || {};
+  const cuenta = (info.conexion || {}).canal || (info.conexion || {}).cuenta;
+  if (!d.estilo) return h('small', { clase: 'meta' }, 'Elige arriba con qué estilo se publica.');
+  if (!cuenta) return h('small', { clase: 'meta' }, `Para subir solo, conecta ${nombre} en Publicar (menú) con ese estilo.`);
+  const clave = `${t.id}:${red}`;
+  const o = PUB_TRAB.opciones[clave] || (PUB_TRAB.opciones[clave] = { privacidad: 'public', modo: 'borrador', cuando: '' });
+  const caja = h('div', { clase: 'subida-yt' });
+  if (sub.estado === 'subiendo') {
+    const pct = Math.round((Number(sub.progreso) || 0) * 100);
+    caja.appendChild(h('small', {}, `Subiendo a «${cuenta}»… ${pct} %`));
+    caja.appendChild(h('div', { clase: 'barra-mind' }, h('span', { estilo: `width:${pct}%` })));
+    return caja;
+  }
+  if (sub.estado === 'listo') {
+    caja.appendChild(h('div', { clase: 'caja-info' }, '✅ Enviado ',
+      sub.url ? h('a', { href: sub.url, target: '_blank', rel: 'noopener' }, '· verlo') : null,
+      sub.aviso ? h('div', { clase: 'meta' }, sub.aviso) : null));
+  }
+  if (sub.estado === 'error') caja.appendChild(cajaError(sub.error || 'no se ha podido subir'));
+  const mandos = h('div', { clase: 'fila' });
+  if (red === 'youtube') {
+    mandos.appendChild(h('select', { onchange: ev => { o.privacidad = ev.target.value; }, value: o.privacidad },
+      [['public', 'Público'], ['unlisted', 'Oculto'], ['private', 'Privado']].map(([x, tt]) => h('option', { value: x }, tt))));
+  }
+  if (red === 'tiktok') {
+    mandos.appendChild(h('select', { onchange: ev => { o.modo = ev.target.value; }, value: o.modo },
+      [['borrador', 'A borradores'], ['directo', 'Directo']].map(([x, tt]) => h('option', { value: x }, tt))));
+  }
+  if (red !== 'tiktok') {
+    mandos.appendChild(h('input', { type: 'datetime-local', value: o.cuando, title: 'Opcional: programar',
+      oninput: ev => { o.cuando = ev.target.value; } }));
+  }
+  mandos.appendChild(h('span', { clase: 'crece' }));
+  mandos.appendChild(h('button', {
+    clase: 'primario mini',
+    onclick: async () => {
+      if (!confirm(`¿Enviar este short a ${nombre} («${cuenta}»)?`)) return;
+      try {
+        await pedir(urlPubTrab(t.id, `/${red}`), { method: 'POST', cuerpo: {
+          estilo: d.estilo, privacidad: o.privacidad, modo: o.modo,
+          publicar_en: o.cuando ? new Date(o.cuando).toISOString() : '' } });
+        toast(`enviando a ${nombre}…`);
+        cargarPubTrab(t.id, undefined, true);
+      } catch (e) { toast(e.message, true); }
+    },
+  }, `⬆ Enviar a «${cuenta}»`));
+  caja.appendChild(mandos);
+  return caja;
+}
+
 function vistaTrabajadoZona() {
   cargarTrabajados();
   const f = TRABAJADO.form;
@@ -6408,7 +6531,11 @@ function vistaTrabajadoZona() {
           : t.estado === 'error' ? (t.error || 'falló')
             : `${Math.round(t.duracion || 0)} s (de ${Math.round(t.original_s || 0)} s)`)),
       h('div', { clase: 'acciones-v' },
-        t.estado === 'listo' ? h('a', { clase: 'boton mini primario', href: url, download: `${(t.titulo || 'short').slice(0, 50)}.mp4` }, '⬇ Descargar') : null,
+        t.estado === 'listo' ? h('a', { clase: 'boton mini', href: url, download: `${(t.titulo || 'short').slice(0, 50)}.mp4` }, '⬇') : null,
+        t.estado === 'listo' ? h('button', { clase: 'mini primario', onclick: () => {
+          APP.light.trabajadoAbierto = t.id; pintarLight();
+          setTimeout(() => { const n = document.querySelector('.publicar'); if (n) n.scrollIntoView({ behavior: 'smooth' }); }, 80);
+        } }, '📣 Publicar') : null,
         h('span', { clase: 'crece' }),
         h('button', { clase: 'mini fantasma peligro', onclick: async () => {
           if (!confirm('¿Borrar este short y su original?')) return;
@@ -6417,6 +6544,8 @@ function vistaTrabajadoZona() {
         } }, 'Borrar'))));
   });
   if (lista.length) caja.appendChild(rejilla);
+  const abierto = lista.find(t => t.id === APP.light.trabajadoAbierto && t.estado === 'listo');
+  if (abierto) caja.appendChild(panelPublicarTrabajado(abierto));
   return caja;
 }
 
