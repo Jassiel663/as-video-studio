@@ -9295,6 +9295,71 @@ def rehacer_miniatura(pid: str, n: int, cuerpo: dict = Body(default=None)):
         raise ErrorApi(404, str(fallo))
 
 
+def _videos_de_estilo(preset_id):
+    """Los videos hechos con un estilo, con su guion. -> [{titulo, duracion_s, guion}]"""
+    salida = []
+    for ficha in listar_proyectos().get("proyectos") or []:
+        if ficha.get("estilo_light") != preset_id:
+            continue
+        try:
+            ctx = contexto(ficha["id"])
+            bloques = _bloques_del_guion(ctx)
+        except Exception:                                   # noqa: BLE001
+            continue
+        if not bloques:
+            continue
+        texto = " ".join(b["texto"] for b in bloques)
+        salida.append({"titulo": ficha.get("nombre") or ficha["id"], "guion": texto,
+                       # ~2,5 palabras por segundo de locucion
+                       "duracion_s": round(len(texto.split()) / 2.5)})
+    return salida
+
+
+@app.get("/api/presets-light/{preset_id}/estudios/{tipo}")
+def leer_estudio_light(preset_id: str, tipo: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    if tipo not in PASOS_MODULOS.estudios.TIPOS:
+        raise ErrorApi(404, f"no hay estudio '{tipo}'")
+    return PASOS_MODULOS.estudios.leer(preset_id, tipo)
+
+
+@app.post("/api/presets-light/{preset_id}/estudios/{tipo}")
+def lanzar_estudio_light(preset_id: str, tipo: str, cuerpo: dict = Body(default=None)):
+    """Competencia, revision de mis videos o un mensaje al chat creativo.
+    Gratis (suscripcion de Claude)."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    estudios = PASOS_MODULOS.estudios
+    datos = _cuerpo(cuerpo)
+    hechos = [f.get("nombre") or f.get("id")
+              for f in listar_proyectos().get("proyectos") or []
+              if f.get("estilo_light") == preset_id]
+    try:
+        if tipo == "competencia":
+            canales = datos.get("canales") or []
+            if isinstance(canales, str):
+                canales = re.split(r"[\n,;]+", canales)
+            return estudios.competencia(preset_id, canales, hechos=hechos)
+        if tipo == "mis_videos":
+            return estudios.mis_videos(preset_id, _videos_de_estilo(preset_id))
+        if tipo == "chat":
+            taller = PASOS_MODULOS.canal.leer(preset_id)
+            nombres = "; ".join(f"{t}: " + ", ".join(f.get("nombre") or i for i, f in taller[t].items())
+                                for t in PASOS_MODULOS.canal.TIPOS if taller[t])
+            return estudios.chat(preset_id, datos.get("mensaje"), taller=nombres, hechos=hechos)
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+    raise ErrorApi(404, f"no hay estudio '{tipo}'")
+
+
+@app.delete("/api/presets-light/{preset_id}/estudios/chat")
+def borrar_chat_light(preset_id: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return PASOS_MODULOS.estudios.borrar_chat(preset_id)
+
+
 @app.get("/api/presets-light/{preset_id}/canal")
 def leer_canal_light(preset_id: str):
     """El taller del canal: personajes, lugares y objetos fijos del estilo."""

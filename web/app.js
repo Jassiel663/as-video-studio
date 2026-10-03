@@ -5657,7 +5657,7 @@ function vistaEstiloLight() {
     h('button', {
       title: 'Temas que encajan con este estilo y lo que funciona en su nicho',
       onclick: () => irALight('ideas', { estiloAbierto: ficha.id }),
-    }, '💡 Ideas y nicho'))));
+    }, '🧠 Estudio e ideas'))));
 
   if (!PESTANAS_ESTILO.some(([id]) => id === l.pestanaEstilo)) l.pestanaEstilo = 'videos';
   const tira = h('div', { clase: 'pestanas-estilo' });
@@ -5866,6 +5866,203 @@ function listaTexto(titulo, cosas) {
     h('ul', {}, ...cosas.map(c => h('li', {}, String(c)))));
 }
 
+
+/* ======================================================= EL ESTUDIO
+ *
+ * Todo lo que Claude estudia de un estilo, en cuatro pestañas (gratis, con la
+ * suscripción): el nicho con sus ideas (`vistaIdeasLight`), la competencia,
+ * tus vídeos, y un chat creativo que propone cosas que se crean de un clic
+ * (pasos/estudios.py).
+ */
+const PESTANAS_ESTUDIO = [
+  ['nicho', '💡 Nicho e ideas'], ['competencia', '🔭 Competencia'],
+  ['mis_videos', '🎬 Mis vídeos'], ['chat', '💬 Chat creativo'],
+];
+const ESTUDIOS = { datos: {}, sondeo: null, canales: '', mensaje: '' };
+
+function claveEstudio(id, tipo) { return `${id}:${tipo}`; }
+
+function cargarEstudioLight(id, tipo, forzar) {
+  const k = claveEstudio(id, tipo);
+  if (!forzar && ESTUDIOS.datos[k] && ESTUDIOS.datos[k].estado !== 'pensando') return;
+  if (!forzar && ESTUDIOS.datos[k]) return;
+  pedir(`${API.presetLight(id)}/estudios/${tipo}`).then(d => {
+    ESTUDIOS.datos[k] = d || {};
+    clearTimeout(ESTUDIOS.sondeo);
+    if ((d || {}).estado === 'pensando') {
+      ESTUDIOS.sondeo = setTimeout(() => {
+        if (APP.light.vista === 'ideas') cargarEstudioLight(id, tipo, true);
+      }, 4000);
+    }
+    if (APP.light.vista === 'ideas') pintarLight();
+  }).catch(e => { ESTUDIOS.datos[k] = { estado: 'error', error: e.message }; });
+}
+
+async function lanzarEstudioLight(id, tipo, cuerpo) {
+  try {
+    ESTUDIOS.datos[claveEstudio(id, tipo)] = await pedir(`${API.presetLight(id)}/estudios/${tipo}`,
+      { method: 'POST', cuerpo: cuerpo || {} });
+    pintarLight();
+    cargarEstudioLight(id, tipo, true);
+  } catch (e) { toast(e.message, true); }
+}
+
+function avisoPensando(d, texto) {
+  if (d.estado !== 'pensando') return null;
+  const seg = d.desde ? Math.round(Date.now() / 1000 - d.desde) : 0;
+  return h('div', { clase: 'caja-info' }, `${texto} ${seg ? `(${duracionCorta(seg)})` : ''}`);
+}
+
+function estudioCompetencia(ficha) {
+  const k = claveEstudio(ficha.id, 'competencia');
+  cargarEstudioLight(ficha.id, 'competencia');
+  const d = ESTUDIOS.datos[k] || {};
+  const caja = h('div', {});
+  caja.appendChild(h('section', { clase: 'doc-hero' },
+    h('h2', {}, 'La competencia'),
+    h('p', {}, 'Escribe los canales que quieres estudiar (su enlace de YouTube o su nombre, '
+      + 'uno por línea o separados por comas, hasta 5). Claude busca sus vídeos más vistos, '
+      + 'cómo titulan, sus miniaturas y su ritmo, y te dice qué copiar y cómo ganarles.'),
+    h('textarea', {
+      rows: 3, 'data-foco': 'estudio-canales',
+      placeholder: 'https://www.youtube.com/@quepasaria\nSupercurioso',
+      value: ESTUDIOS.canales || (d.pedidos || []).join('\n'),
+      oninput: ev => { ESTUDIOS.canales = ev.target.value; },
+    }),
+    h('div', { clase: 'fila' }, h('span', { clase: 'crece' }),
+      h('button', {
+        clase: 'primario', disabled: d.estado === 'pensando',
+        onclick: () => lanzarEstudioLight(ficha.id, 'competencia',
+          { canales: ESTUDIOS.canales || (d.pedidos || []).join('\n') }),
+      }, d.estado === 'pensando' ? 'estudiando…' : '🔎 Estudiar la competencia'))));
+  const espera = avisoPensando(d, 'Buscando y leyendo sobre esos canales… suele tardar 2-6 minutos.');
+  if (espera) caja.appendChild(espera);
+  if (d.estado === 'error' && d.error) caja.appendChild(cajaError(d.error));
+  (d.canales || []).forEach(c => caja.appendChild(h('section', { clase: 'nicho', estilo: 'margin-bottom:12px' },
+    h('h3', {}, c.url ? h('a', { href: c.url, target: '_blank', rel: 'noopener' }, c.nombre || c.url) : (c.nombre || '')),
+    c.resumen ? h('p', {}, c.resumen) : null,
+    h('div', { clase: 'nicho-columnas' },
+      listaTexto('🏆 Lo que mejor les funciona', c.exitos),
+      h('div', { clase: 'nicho-lista' },
+        c.titulos ? h('p', {}, h('b', {}, 'Títulos: '), c.titulos) : null,
+        c.miniaturas ? h('p', {}, h('b', {}, 'Miniaturas: '), c.miniaturas) : null,
+        c.ritmo ? h('p', {}, h('b', {}, 'Ritmo: '), c.ritmo) : null)),
+    h('div', { clase: 'nicho-columnas' },
+      listaTexto('✅ Copiar', c.copiar), listaTexto('⛔ Evitar', c.evitar)))));
+  if (d.conclusion) {
+    caja.appendChild(cabeceraSeccion('Cómo ganarles'));
+    caja.appendChild(h('section', { clase: 'nicho' }, h('p', { clase: 'nicho-resumen' }, d.conclusion),
+      (d.fuentes || []).length ? h('div', { clase: 'meta' }, 'Fuentes: ' + d.fuentes.slice(0, 6).join(' · ')) : null));
+  }
+  return caja;
+}
+
+function estudioMisVideos(ficha) {
+  const k = claveEstudio(ficha.id, 'mis_videos');
+  cargarEstudioLight(ficha.id, 'mis_videos');
+  const d = ESTUDIOS.datos[k] || {};
+  const caja = h('div', {});
+  caja.appendChild(h('section', { clase: 'doc-hero' },
+    h('h2', {}, 'Tus vídeos, revisados'),
+    h('p', {}, 'Claude lee el guion de cada vídeo de este estilo y te dice, con franqueza, '
+      + 'cómo mejorar el gancho, el ritmo y el título, y qué cambiar primero en el canal. '
+      + 'No ve las estadísticas de YouTube: revisa lo que hay en el estudio.'),
+    h('div', { clase: 'fila' }, h('span', { clase: 'crece' }),
+      h('button', {
+        clase: 'primario', disabled: d.estado === 'pensando',
+        onclick: () => lanzarEstudioLight(ficha.id, 'mis_videos'),
+      }, d.estado === 'pensando' ? 'revisando…' : (d.videos ? '↻ Revisar de nuevo' : '🔎 Revisar mis vídeos')))));
+  const espera = avisoPensando(d, 'Leyendo tus guiones…');
+  if (espera) caja.appendChild(espera);
+  if (d.estado === 'error' && d.error) caja.appendChild(cajaError(d.error));
+  if (d.general) caja.appendChild(h('section', { clase: 'nicho' }, h('p', { clase: 'nicho-resumen' }, d.general)));
+  if ((d.prioridades || []).length) {
+    caja.appendChild(cabeceraSeccion('Lo primero que cambiaría'));
+    caja.appendChild(h('section', { clase: 'nicho' },
+      h('ol', { clase: 'mejoras' }, ...d.prioridades.map(p => h('li', {}, p)))));
+  }
+  if ((d.videos || []).length) {
+    caja.appendChild(cabeceraSeccion('Vídeo a vídeo'));
+    const rejilla = h('div', { clase: 'rejilla-ideas' });
+    d.videos.forEach(v => rejilla.appendChild(h('article', { clase: 'idea' },
+      h('div', { clase: 'sellos' }, v.nota !== undefined ? h('span', { clase: 'sello-v' }, `${v.nota}/10`) : null),
+      h('h3', {}, v.titulo || ''),
+      v.gancho ? h('p', {}, h('b', {}, 'Gancho: '), v.gancho) : null,
+      v.titulo_mejor ? h('p', { clase: 'gancho' }, `Título mejor: «${v.titulo_mejor}»`) : null,
+      (v.mejoras || []).length ? h('ul', { clase: 'mejoras' }, ...v.mejoras.map(m => h('li', {}, m))) : null)));
+    caja.appendChild(rejilla);
+  }
+  return caja;
+}
+
+async function accionDelChat(ficha, a) {
+  if (a.tipo === 'idea') {
+    hacerIdeaLight(ficha, { titulo: a.titulo, material: a.material, tipo: a.formato });
+    return;
+  }
+  if (!confirm(`¿Crear «${a.nombre}» en el taller y dibujar su hoja (~0,10 $)?`)) return;
+  try {
+    await pedir(urlTaller(ficha.id, a.tipo), { method: 'POST', cuerpo: { nombre: a.nombre, idea: a.idea } });
+    toast('creando en el taller: lo verás en la pestaña 🎭 Taller del estilo');
+    TALLER.datos[ficha.id] = null;
+  } catch (e) { toast(e.message, true); }
+}
+
+function estudioChat(ficha) {
+  const k = claveEstudio(ficha.id, 'chat');
+  cargarEstudioLight(ficha.id, 'chat');
+  const d = ESTUDIOS.datos[k] || {};
+  const pensando = d.estado === 'pensando';
+  const caja = h('div', { clase: 'chat-creativo' });
+  const hilo = h('div', { clase: 'chat-hilo' });
+  const mensajes = d.mensajes || [];
+  if (!mensajes.length) {
+    hilo.appendChild(h('div', { clase: 'pista' },
+      'Pregunta lo que quieras del canal: «inventemos un personaje secundario», «dame una '
+      + 'serie de 5 vídeos», «¿qué nombre le pongo al canal?», «mejora este título»… '
+      + 'Cuando proponga algo concreto, aparece un botón para crearlo.'));
+  }
+  mensajes.forEach(m => {
+    const burbuja = h('div', { clase: `chat-msg ${m.quien === 'yo' ? 'yo' : 'claude'}` },
+      h('div', { clase: 'chat-texto' }, m.texto));
+    if ((m.acciones || []).length) {
+      burbuja.appendChild(h('div', { clase: 'chat-acciones' }, ...m.acciones.map(a => h('button', {
+        clase: 'mini', onclick: () => accionDelChat(ficha, a),
+      }, a.tipo === 'idea' ? `🎬 Hacer «${a.titulo}»`
+        : `${a.tipo === 'personajes' ? '🧑' : a.tipo === 'lugares' ? '🏠' : '🎒'} Crear «${a.nombre}»`))));
+    }
+    hilo.appendChild(burbuja);
+  });
+  if (pensando) hilo.appendChild(h('div', { clase: 'chat-msg claude' }, h('div', { clase: 'chat-texto meta' }, 'pensando…')));
+  if (d.estado === 'error' && d.error) hilo.appendChild(cajaError(d.error));
+  caja.appendChild(hilo);
+  const enviar = () => {
+    const texto = String(ESTUDIOS.mensaje || '').trim();
+    if (!texto || pensando) return;
+    ESTUDIOS.mensaje = '';
+    lanzarEstudioLight(ficha.id, 'chat', { mensaje: texto });
+  };
+  caja.appendChild(h('div', { clase: 'chat-pie' },
+    h('textarea', {
+      rows: 2, 'data-foco': 'chat-creativo', placeholder: 'Escribe a tu compañero creativo…',
+      value: ESTUDIOS.mensaje || '', disabled: pensando,
+      oninput: ev => { ESTUDIOS.mensaje = ev.target.value; },
+      onkeydown: ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); enviar(); } },
+    }),
+    h('div', { clase: 'fila' },
+      mensajes.length ? h('button', {
+        clase: 'mini fantasma', onclick: async () => {
+          if (!confirm('¿Empezar una conversación nueva? Se borra esta.')) return;
+          ESTUDIOS.datos[k] = await pedir(`${API.presetLight(ficha.id)}/estudios/chat`, { method: 'DELETE' });
+          pintarLight();
+        },
+      }, 'Nueva conversación') : null,
+      h('span', { clase: 'crece' }),
+      h('button', { clase: 'primario', disabled: pensando, onclick: enviar }, 'Enviar'))));
+  setTimeout(() => { hilo.scrollTop = hilo.scrollHeight; }, 0);
+  return caja;
+}
+
 function vistaIdeasLight() {
   const l = APP.light;
   const ficha = fichaLight(l.estiloAbierto);
@@ -5875,7 +6072,17 @@ function vistaIdeasLight() {
     caja.appendChild(h('div', { clase: 'pista' }, 'Ese estilo ya no existe.'));
     return caja;
   }
-  caja.appendChild(migasEstilo(ficha, 'Ideas y nicho'));
+  caja.appendChild(migasEstilo(ficha, 'Estudio'));
+  if (!PESTANAS_ESTUDIO.some(([id]) => id === l.pestanaEstudio)) l.pestanaEstudio = 'nicho';
+  const tira = h('div', { clase: 'pestanas-estilo' });
+  PESTANAS_ESTUDIO.forEach(([id, texto]) => tira.appendChild(h('button', {
+    clase: 'pestana-e' + (id === l.pestanaEstudio ? ' activa' : ''),
+    onclick: () => { l.pestanaEstudio = id; pintarLight(); },
+  }, texto)));
+  caja.appendChild(tira);
+  if (l.pestanaEstudio === 'competencia') { caja.appendChild(estudioCompetencia(ficha)); return caja; }
+  if (l.pestanaEstudio === 'mis_videos') { caja.appendChild(estudioMisVideos(ficha)); return caja; }
+  if (l.pestanaEstudio === 'chat') { caja.appendChild(estudioChat(ficha)); return caja; }
   cargarIdeasLight(ficha.id);
   const d = IDEAS_LIGHT.datos[ficha.id] || {};
   const pensando = d.estado === 'pensando';
@@ -6068,7 +6275,7 @@ function formularioTaller(ficha, tipo, ejemplo) {
       'data-foco': `taller-idea-${tipo}`, oninput: ev => { f.idea = ev.target.value; },
     }),
     h('div', { clase: 'fila' },
-      h('label', { clase: 'meta' }, 'Foto o dibujo de referencia (opcional) ', foto),
+      h('span', { clase: 'meta' }, 'Foto o dibujo de referencia (opcional) ', foto),
       h('span', { clase: 'crece' }),
       h('button', { clase: 'primario', onclick: () => crearEnTallerLight(ficha, tipo) },
         'Crear y dibujar (~0,10 $)')));

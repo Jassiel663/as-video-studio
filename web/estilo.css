@@ -2673,6 +2673,23 @@ button.enlace { background: none; border: none; padding: 0; color: var(--acento)
 .taller-form input[type=file] { font-size: 12px; max-width: 240px; }
 .taller-item .cara-v img { object-fit: contain; background: var(--papel); }
 
+/* ---- el chat creativo */
+.chat-creativo { display: flex; flex-direction: column; gap: 10px; }
+.chat-hilo {
+  display: flex; flex-direction: column; gap: 10px; max-height: 58vh; overflow-y: auto;
+  padding: 14px; background: var(--panel); border: 1px solid var(--linea); border-radius: 14px;
+}
+.chat-msg { max-width: 82%; display: flex; flex-direction: column; gap: 6px; }
+.chat-msg.yo { align-self: flex-end; }
+.chat-msg .chat-texto {
+  white-space: pre-wrap; line-height: 1.55; padding: 10px 14px; border-radius: 14px;
+  background: var(--hueco); border: 1px solid var(--linea);
+}
+.chat-msg.yo .chat-texto { background: var(--marcado); border-color: var(--acento-borde); }
+.chat-acciones { display: flex; gap: 6px; flex-wrap: wrap; }
+.chat-pie { display: flex; flex-direction: column; gap: 8px; }
+.chat-pie .fila { display: flex; align-items: center; gap: 8px; }
+
 @media (max-width: 760px) {
   .estilo-hero { grid-template-columns: 1fr; padding: 14px; }
   .estilo-hero .hero-cara { aspect-ratio: 16 / 9; }
