@@ -9242,6 +9242,59 @@ def generar_video(pid: str, cuerpo: dict = Body(default=None)):
             "eventos": f"/api/trabajos/{trabajo_id}/eventos"}
 
 
+def _datos_miniatura(ctx):
+    """Lo que necesita pasos/miniaturas de un video: titulo, guion, estilo,
+    idioma y los nombres del reparto."""
+    bloques = _bloques_del_guion(ctx)
+    if not bloques:
+        raise ErrorApi(400, "este video todavia no tiene guion: genera el guion "
+                            "antes de pedir miniaturas")
+    assets = ctx.estado.params("assets") or {}
+    guion = ctx.estado.params("guion") or {}
+    reparto = ((assets.get("catalogo") or {}).get("reparto") or {})
+    return {"titulo": ctx.proyecto.config.get("nombre", ctx.proyecto.id),
+            "guion": " ".join(b["texto"] for b in bloques),
+            "estilo": assets.get("estilo") or {},
+            "idioma": guion.get("idioma_salida") or "es",
+            "reparto": ", ".join(str(f.get("nombre") or i) for i, f in reparto.items())[:300]}
+
+
+@app.get("/api/proyectos/{pid}/miniaturas")
+def leer_miniaturas(pid: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    ctx = contexto(pid)
+    return PASOS_MODULOS.miniaturas.leer(ctx.proyecto)
+
+
+@app.post("/api/proyectos/{pid}/miniaturas")
+def proponer_miniaturas(pid: str, cuerpo: dict = Body(default=None)):
+    """Tres miniaturas de YouTube en el estilo del canal (~0,25 $)."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    ctx = contexto(pid)
+    datos = _cuerpo(cuerpo)
+    base = _datos_miniatura(ctx)
+    return PASOS_MODULOS.miniaturas.proponer(
+        ctx.proyecto, base["titulo"], base["guion"], base["estilo"], base["idioma"],
+        base["reparto"], indicaciones=str(datos.get("indicaciones") or ""))
+
+
+@app.post("/api/proyectos/{pid}/miniaturas/{n}/rehacer")
+def rehacer_miniatura(pid: str, n: int, cuerpo: dict = Body(default=None)):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    ctx = contexto(pid)
+    datos = _cuerpo(cuerpo)
+    base = _datos_miniatura(ctx)
+    try:
+        return PASOS_MODULOS.miniaturas.rehacer(
+            ctx.proyecto, n, datos.get("nota") or "", base["estilo"], base["idioma"],
+            texto=datos.get("texto"))
+    except ValueError as fallo:
+        raise ErrorApi(404, str(fallo))
+
+
 @app.get("/api/presets-light/{preset_id}/canal")
 def leer_canal_light(preset_id: str):
     """El taller del canal: personajes, lugares y objetos fijos del estilo."""

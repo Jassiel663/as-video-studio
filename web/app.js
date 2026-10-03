@@ -5540,7 +5540,7 @@ function tarjetaVideoLight(video, opciones) {
     esShortVideo(video) ? h('span', { clase: 'sello-v' }, 'Short') : null,
     video.documental ? h('span', { clase: 'sello-v doc' }, 'Documental') : null);
   const cara = video.miniatura
-    ? h('img', { src: API.archivo(video.id, video.miniatura), alt: '', loading: 'lazy' })
+    ? h('img', { src: `${API.archivo(video.id, video.miniatura)}?mini=1`, alt: '', loading: 'lazy' })
     : h('div', { clase: 'sin-cara' }, (video.nombre || video.id || '?').slice(0, 1).toUpperCase());
   const acciones = h('div', { clase: 'acciones-v' },
     o.atajosShort && video.tiene_mp4 && !esShortVideo(video) ? h('button', {
@@ -9473,6 +9473,92 @@ function filaVeoLight() {
     previsionVideoIaLight());
 }
 
+
+/* ====================================================== MINIATURAS
+ *
+ * Tres propuestas de miniatura de YouTube por vídeo (pasos/miniaturas.py):
+ * Claude propone los conceptos y se dibujan en el estilo del canal con sus
+ * personajes. Cada una se descarga o se rehace con una nota.
+ */
+const MINIATURAS = { datos: {}, sondeo: null, indicaciones: '' };
+
+function cargarMiniaturasLight(pid, forzar) {
+  if (!pid || (!forzar && MINIATURAS.datos[pid])) return;
+  pedir(`${API.proyecto(pid)}/miniaturas`).then(d => {
+    MINIATURAS.datos[pid] = d || {};
+    clearTimeout(MINIATURAS.sondeo);
+    if ((d || {}).estado === 'pensando') {
+      MINIATURAS.sondeo = setTimeout(() => {
+        if (videoAbierto().pid === pid) cargarMiniaturasLight(pid, true);
+      }, 5000);
+    }
+    refrescarVivosLight();
+  }).catch(() => { MINIATURAS.datos[pid] = {}; });
+}
+
+async function pedirMiniaturasLight(pid) {
+  try {
+    MINIATURAS.datos[pid] = await pedir(`${API.proyecto(pid)}/miniaturas`,
+      { method: 'POST', cuerpo: { indicaciones: MINIATURAS.indicaciones || '' } });
+    toast('diseñando 3 miniaturas: tarda 2-3 minutos');
+    refrescarVivosLight();
+    cargarMiniaturasLight(pid, true);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function rehacerMiniaturaLight(pid, m) {
+  const nota = prompt(`¿Qué cambiarías de la miniatura ${m.n}? (p. ej. «el texto más grande», «que se le vea asustado»)`, '');
+  if (nota === null) return;
+  const texto = prompt('Texto de la miniatura (déjalo igual o cámbialo):', m.texto || '');
+  if (texto === null) return;
+  try {
+    MINIATURAS.datos[pid] = await pedir(`${API.proyecto(pid)}/miniaturas/${m.n}/rehacer`,
+      { method: 'POST', cuerpo: { nota, texto } });
+    toast('volviendo a dibujarla (~0,08 $)');
+    cargarMiniaturasLight(pid, true);
+  } catch (e) { toast(e.message, true); }
+}
+
+function bloqueMiniaturasLight() {
+  const v = videoAbierto();
+  if (!v.pid || !v.guion) return null;
+  cargarMiniaturasLight(v.pid);
+  const d = MINIATURAS.datos[v.pid] || {};
+  const pensando = d.estado === 'pensando';
+  const lista = d.miniaturas || [];
+  const caja = h('section', { clase: 'bloque-shorts miniaturas' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, '🖼 Miniaturas'),
+      h('span', { clase: 'meta' }, 'para YouTube, en el estilo del canal y con sus personajes')));
+  caja.appendChild(h('div', { clase: 'fila' },
+    h('input', {
+      type: 'text', clase: 'crece', 'data-foco': 'miniaturas-indicaciones',
+      placeholder: 'Opcional: qué quieres (p. ej. «cara de sorpresa y un billete gigante»)',
+      value: MINIATURAS.indicaciones, oninput: ev => { MINIATURAS.indicaciones = ev.target.value; },
+    }),
+    h('button', { clase: 'primario', disabled: pensando, onclick: () => pedirMiniaturasLight(v.pid) },
+      pensando ? 'diseñando…' : (lista.length ? '↻ Otras 3 (~0,25 $)' : 'Diseñar 3 (~0,25 $)'))));
+  if (d.estado === 'error' && d.error) caja.appendChild(cajaError(d.error));
+  if (lista.length) {
+    const rejilla = h('div', { clase: 'rejilla-videos' });
+    lista.forEach(m => {
+      const url = `${API.archivo(v.pid, `miniaturas/${m.fichero}`)}?v=${m.version || 1}`;
+      rejilla.appendChild(h('div', { clase: 'tarjeta-video' },
+        h('a', { href: url, target: '_blank', rel: 'noopener', clase: 'cara-v' },
+          h('img', { src: url, alt: m.texto || `miniatura ${m.n}`, loading: 'lazy' })),
+        h('div', { clase: 'cuerpo-v' },
+          h('div', { clase: 'nombre' }, m.texto ? `«${m.texto}»` : `Miniatura ${m.n}`),
+          h('div', { clase: 'meta' }, m.por_que || '')),
+        h('div', { clase: 'acciones-v' },
+          h('a', { clase: 'boton mini', href: url, download: `miniatura_${m.n}.png` }, '⬇ Descargar'),
+          h('button', { clase: 'mini', disabled: pensando, onclick: () => rehacerMiniaturaLight(v.pid, m) }, '↻ Rehacer'))));
+    });
+    caja.appendChild(rejilla);
+  } else if (pensando) {
+    caja.appendChild(h('div', { clase: 'caja-info' }, 'Claude está pensando los conceptos y luego se dibujan una a una…'));
+  }
+  return caja;
+}
+
 function vistaVideoLight() {
   const v = videoAbierto();
   const caja = h('div', { clase: 'light-video' });
@@ -9507,6 +9593,7 @@ function vistaVideoLight() {
   }
   caja.appendChild(marco);
   caja.appendChild(enVivo(filaVideoIaLight));
+  caja.appendChild(enVivo(bloqueMiniaturasLight));
 
   /* LA TIRA DE VINETAS SOLO MIENTRAS SE GENERA.
      Con el video ya montado esta pantalla es para VERLO y comentarlo, y
