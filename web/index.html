@@ -6,20 +6,20 @@
      arriba y abajo. Lo que se mete debajo del notch se recupera con las
      env(safe-area-inset-*) de la hoja de estilo. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#14161c">
-<title>AS Video Studio</title>
+<meta name="theme-color" content="#000000">
+<title>Mind Videos</title>
 <!-- La claqueta. Va como data: URI para no pedir un fichero mas: sin esto el
      navegador pedia /favicon.ico en cada carga y dejaba un 404 permanente en la
      consola. -->
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎬</text></svg>">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="estilo.css">
 </head>
 <body>
 
 <header id="cabecera">
-  <h1>AS Video Studio</h1>
+  <h1>Mind Videos</h1>
   <button id="btn-proyecto" class="proyecto" title="Proyecto abierto — pulsa para cambiar, crear o apartar"></button>
   <span id="meta-proyecto" class="meta"></span>
   <span class="crece"></span>
@@ -61,6 +61,7 @@
     <path d="M4 5h16v11H9l-5 4z"/>
     <path d="M8 9h8M8 12.5h5"/>
   </svg>
+  <span class="burbuja-texto">Pregunta a Mind</span>
 </button>
 <aside id="asistente" class="plegado">
   <div class="lateral-cab">

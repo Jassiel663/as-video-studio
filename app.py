@@ -2606,6 +2606,34 @@ def coste_global(limite: int = Query(default=0)):
     return ficha
 
 
+@app.get("/api/panel")
+def panel_de_inicio():
+    """Las cifras del panel de inicio: lo que hay en marcha y el gasto del mes.
+
+    El gasto se suma del registro global de consumo (cada evento con su
+    momento): lo de este mes natural, en dolares.
+    """
+    mes = ahora()[:7]
+    gasto = 0.0
+    try:
+        with open(COSTE.RUTA_GLOBAL, "r", encoding="utf-8") as fh:
+            for linea in fh:
+                try:
+                    evento = json.loads(linea)
+                except ValueError:
+                    continue
+                if str(evento.get("momento") or "").startswith(mes):
+                    gasto += float(evento.get("usd") or 0)
+    except OSError:
+        pass
+    activos = [{"proyecto": f.get("proyecto"), "id": f.get("id"),
+                "nombre": f.get("nombre"), "estado": f.get("estado"),
+                "progreso": f.get("progreso"), "mensaje": f.get("mensaje") or ""}
+               for f in listar_trabajos(activos=1)["trabajos"]
+               if f.get("estado") in ("pendiente", "ejecutando")]
+    return {"gasto_mes_usd": round(gasto, 2), "mes": mes, "activos": activos}
+
+
 @app.get("/api/coste/tarifas")
 def leer_tarifas():
     """Tabla de tarifas. Vive en un unico sitio: estudio/tarifas.json."""

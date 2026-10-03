@@ -5329,6 +5329,7 @@ function pintarLightAhora() {
     else if (APP.light.vista === 'generando') contenido.appendChild(vistaGenerandoLight());
     else if (APP.light.vista === 'preset') contenido.appendChild(vistaPresetLight());
     else if (APP.light.vista === 'estilo') contenido.appendChild(vistaEstiloLight());
+    else if (APP.light.vista === 'elegir') contenido.appendChild(vistaElegirMind());
     else if (APP.light.vista === 'ideas') contenido.appendChild(vistaIdeasLight());
     else if (APP.light.vista === 'elegido') {
       /* TRES VISTAS DENTRO DE «elegido», y la elige LO QUE HAY: el encargo
@@ -5355,7 +5356,9 @@ function pintarLightAhora() {
      documento y dejarían de estar donde se las busca. Y fuera pueden ir de
      borde a borde, que dentro no: la columna tiene ancho maximo. */
   if (BARRA_INFERIOR.nodo) contenedor.appendChild(BARRA_INFERIOR.nodo);
-  contenedor.appendChild(navLight());
+  // la barra de pasos solo con un vídeo abierto: fuera de él manda el menú
+  if (APP.light.vista === 'elegido') contenedor.appendChild(navLight());
+  try { pintarLateralLight(); cargarPanelMind(); } catch (e) { console.error(e); }
 }
 
 function irALight(vista, extra) {
@@ -5367,39 +5370,463 @@ function irALight(vista, extra) {
 
 /* ------------------------------------------------------------- la galería */
 
-/* TRES ZONAS: ESTILOS, SHORTS Y DOCUMENTALES. Estilos es la casa: cada estilo
-   es una carpeta con SUS vídeos y SUS shorts dentro (`vistaEstiloLight`).
-   Shorts junta los canales de shorts y las tres formas de sacar uno, y
-   Documentales los vídeos con planos reales de banco (pasos/reales.py). La
-   zona elegida se recuerda en este navegador. */
-const ZONAS_LIGHT = [
-  ['videos', '▦', 'Estilos'],
-  ['shorts', '▯', 'Shorts'],
-  ['documentales', '◉', 'Documentales'],
-];
+/* =========================================================== MIND VIDEOS
+ *
+ * La identidad (logo «Órbita»), el MENÚ LATERAL y las zonas de la casa:
+ *
+ *   ESTUDIO      Inicio · Mis estilos · Vídeos · Shorts · Documentales · Ideas y nicho
+ *   PRODUCCIÓN   Cola · Presupuesto · Papelera
+ *
+ * El menú es la navegación de siempre puesta de pie: en escritorio va fijo a
+ * la izquierda; en el móvil es un cajón que abre el botón ☰ de la cabecera.
+ * La zona elegida se recuerda en este navegador.
+ */
+const LOGO_MIND = `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+  <ellipse cx="32" cy="32" rx="27" ry="15" transform="rotate(32 32 32)" stroke="#a78bfa" stroke-width="3.6"/>
+  <ellipse cx="32" cy="32" rx="27" ry="15" transform="rotate(-32 32 32)" stroke="#fff" stroke-width="3.6"/>
+  <path d="M28 24.5 40 32l-12 7.5z" fill="#a78bfa"/>
+</svg>`;
 
-function zonaLight() {
-  try {
-    const z = localStorage.getItem('estudio.light.zona');
-    return ZONAS_LIGHT.some(([id]) => id === z) ? z : 'videos';
-  } catch (e) { return 'videos'; }
+function marcaMind(clase) {
+  const caja = h('span', { clase: `marca-mind ${clase || ''}` });
+  caja.innerHTML = `<span class="marca-logo">${LOGO_MIND}</span>`
+    + '<span class="marca-texto"><b>mind</b><small>videos</small></span>';
+  return caja;
+}
+
+const ICONOS_MIND = {
+  inicio: 'M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z',
+  videos: 'M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-.5-1.5-.5-2.5 1-1.5 2-1.5H18a3 3 0 0 0 3-3c0-5-4-9-9-9z M7.5 11h.01 M10 7.5h.01 M14.5 7.5h.01',
+  todos: 'M3 4h18v16H3z M7 4v16 M17 4v16 M3 9h4 M3 15h4 M17 9h4 M17 15h4',
+  shorts: 'M7 3h10v18H7z M11 18h2',
+  documentales: 'M3 9h18v11H3z M3 9l3-5h12l3 5 M8 4l2 5 M13 4l2 5',
+  ideas: 'M9 18h6 M10 21h4 M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z',
+  cola: 'M4 6h10 M4 12h10 M4 18h7 M16 10l5 3-5 3z',
+  presupuesto: 'M3 6h18v14H3z M3 10h18 M16 15h2',
+  papelera: 'M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13',
+  config: 'M4 7h10 M18 7h2 M4 17h4 M12 17h8 M16 5v4 M10 15v4',
+  nube: 'M7 18a4 4 0 0 1-.6-7.96A6 6 0 0 1 18 9.5a4.25 4.25 0 0 1-.5 8.5z',
+  menu: 'M4 7h16 M4 12h16 M4 17h16',
+  flecha: 'M9 6l6 6-6 6',
+  mas: 'M12 5v14 M5 12h14',
+  carpeta: 'M3 7h6l2 2h10v10H3z',
+};
+
+const ZONAS_MIND = [
+  { grupo: 'Estudio', zonas: [
+    ['inicio', 'Inicio'], ['videos', 'Mis estilos'], ['todos', 'Vídeos'],
+    ['shorts', 'Shorts'], ['documentales', 'Documentales'], ['ideas', 'Ideas y nicho']] },
+  { grupo: 'Producción', zonas: [
+    ['cola', 'Cola'], ['presupuesto', 'Presupuesto'], ['papelera', 'Papelera']] },
+];
+const TITULO_ZONA = Object.fromEntries(ZONAS_MIND.flatMap(g => g.zonas));
+
+// la zona que manda en el menú cuando lo que se ve no es una zona
+function zonaActivaMind() {
+  const l = APP.light;
+  if (l.vista === 'estilo' || l.vista === 'preset' || l.vista === 'crear' || l.vista === 'generando') return 'videos';
+  if (l.vista === 'ideas') return 'ideas';
+  if (l.vista === 'elegir') return l.tipoNuevo === 'short' ? 'shorts'
+    : l.tipoNuevo === 'documental' ? 'documentales' : 'todos';
+  if (l.vista === 'elegido') {
+    const v = videosLight().find(x => x.id === l.video.pid) || {};
+    return esShortVideo(v) ? 'shorts' : v.documental ? 'documentales' : 'todos';
+  }
+  return zonaLight();
 }
 
 function irAZonaLight(id) {
   try { localStorage.setItem('estudio.light.zona', id); } catch (e) { /* sin almacén */ }
+  try { pararPrevia(); } catch (e) { /* sin previa */ }
+  document.body.classList.remove('menu-abierto');
+  if (APP.light.vista === 'elegido') recordarVideoLight('');
   irALight('galeria');
 }
 
-function selectorZonaLight() {
-  const actual = ['estilo', 'ideas'].includes(APP.light.vista) ? 'videos' : zonaLight();
-  const tira = h('nav', { clase: 'zonas-light', 'aria-label': 'Zonas' });
-  ZONAS_LIGHT.forEach(([id, icono, texto]) => {
-    tira.appendChild(h('button', {
-      clase: 'zona' + (id === actual ? ' activa' : ''),
-      onclick: () => irAZonaLight(id),
-    }, h('span', { clase: 'ico' }, icono), texto));
+function zonaLight() {
+  try {
+    const z = localStorage.getItem('estudio.light.zona');
+    return TITULO_ZONA[z] ? z : 'inicio';
+  } catch (e) { return 'inicio'; }
+}
+
+// el menú lateral ya hace de selector: arriba no se repite
+function selectorZonaLight() { return h('span', {}); }
+
+function pintarLateralLight() {
+  let lateral = $('#lateral-mind');
+  if (!lateral) {
+    lateral = h('aside', { id: 'lateral-mind', 'aria-label': 'Menú' });
+    $('#cuerpo').insertBefore(lateral, $('#cuerpo').firstChild);
+    document.body.appendChild(h('div', {
+      id: 'velo-menu', onclick: () => document.body.classList.remove('menu-abierto'),
+    }));
+  }
+  const activa = zonaActivaMind();
+  const cuentas = {
+    videos: presetsLight().filter(f => !esCanalShort(f.id)).length,
+    cola: ((PANEL.datos || {}).activos || []).length,
+  };
+  vaciar(lateral);
+  lateral.appendChild(h('div', { clase: 'lateral-marca' }, marcaMind()));
+  const nombre = ($('#cuenta-nombre') && $('#cuenta-nombre').textContent.trim()) || '';
+  lateral.appendChild(h('div', { clase: 'lateral-espacio' },
+    h('span', { clase: 'avatar' }, (nombre || 'M').slice(0, 1).toUpperCase()),
+    h('span', { clase: 'crece' }, h('b', {}, 'Mi estudio'), h('small', {}, nombre || 'Espacio personal'))));
+  ZONAS_MIND.forEach(({ grupo, zonas }) => {
+    lateral.appendChild(h('div', { clase: 'lateral-grupo' }, grupo));
+    zonas.forEach(([id, texto]) => {
+      const boton = h('button', {
+        clase: 'lateral-item' + (id === activa ? ' activo' : ''),
+        'aria-current': id === activa ? 'page' : null,
+        onclick: () => irAZonaLight(id),
+      });
+      boton.appendChild(iconoNav(ICONOS_MIND[id]));
+      boton.appendChild(h('span', { clase: 'crece' }, texto));
+      if (cuentas[id]) boton.appendChild(h('span', { clase: 'cuenta' }, String(cuentas[id])));
+      lateral.appendChild(boton);
+    });
   });
-  return tira;
+  lateral.appendChild(h('div', { clase: 'crece' }));
+  const nube = h('div', { clase: 'lateral-nube' });
+  nube.appendChild(iconoNav(ICONOS_MIND.nube));
+  nube.appendChild(h('span', {}, h('b', {}, 'Tu estudio en la nube'), h('small', {}, 'Trabaja aunque tú desconectes')));
+  lateral.appendChild(nube);
+  const config = h('button', { clase: 'lateral-item', onclick: () => { document.body.classList.remove('menu-abierto'); conmutarConfig(); } });
+  config.appendChild(iconoNav(ICONOS_MIND.config));
+  config.appendChild(h('span', { clase: 'crece' }, 'Configuración'));
+  lateral.appendChild(config);
+  lateral.appendChild(h('div', { clase: 'lateral-pie' }, 'MIND VIDEOS'));
+
+  // la cabecera: ☰ en el móvil, la marca, y dónde estás
+  const cab = $('#cabecera');
+  if (cab && !$('#btn-menu')) {
+    const menu = h('button', {
+      id: 'btn-menu', clase: 'mini fantasma', 'aria-label': 'Abrir el menú',
+      onclick: () => document.body.classList.toggle('menu-abierto'),
+    });
+    menu.appendChild(iconoNav(ICONOS_MIND.menu));
+    cab.insertBefore(menu, cab.firstChild);
+    const titulo = cab.querySelector('h1');
+    if (titulo) { vaciar(titulo); titulo.appendChild(marcaMind('cab')); }
+    titulo.insertAdjacentElement('afterend', h('span', { id: 'migas-mind', clase: 'meta' }));
+  }
+  const migas = $('#migas-mind');
+  if (migas) {
+    const aqui = APP.light.vista === 'elegido' ? (APP.light.video.nombre || 'Vídeo')
+      : APP.light.vista === 'estilo' || APP.light.vista === 'ideas'
+        ? ((fichaLight(APP.light.estiloAbierto) || {}).nombre || TITULO_ZONA[activa])
+        : TITULO_ZONA[activa] || '';
+    vaciar(migas);
+    migas.appendChild(h('span', {}, 'Mi estudio'));
+    migas.appendChild(h('span', { clase: 'sep' }, '›'));
+    migas.appendChild(h('b', {}, aqui));
+  }
+}
+
+/* ------------------------------------------------- las cifras del inicio */
+const PANEL = { datos: null, ultima: 0 };
+
+function cargarPanelMind(forzar) {
+  if (!forzar && Date.now() - PANEL.ultima < 8000) return;
+  PANEL.ultima = Date.now();
+  pedir(`${BASE}/api/panel`).then(d => {
+    const antes = JSON.stringify((PANEL.datos || {}).activos || []);
+    PANEL.datos = d || {};
+    if (antes !== JSON.stringify(PANEL.datos.activos || []) || !PANEL.pintado) {
+      PANEL.pintado = true;
+      if (APP.light.vista === 'galeria') pintarLight(); else pintarLateralLight();
+    }
+  }).catch(() => { /* sin cifras: el panel se queda con lo que tenía */ });
+}
+
+function tipoDeVideo(v) { return esShortVideo(v) ? 'Short' : v.documental ? 'Documental' : 'Vídeo'; }
+
+function imagenVideo(v, ancho) {
+  return v && v.miniatura ? `${API.archivo(v.id, v.miniatura)}?mini=${ancho || 1}` : '';
+}
+
+/* «¿Qué creamos hoy?» y «Crear proyecto»: si hay un solo estilo se usa ese; si
+   hay varios, se elige en una pantalla de tarjetas. */
+function nuevoProyectoMind(tipo) {
+  const estilos = presetsLight().filter(f => tipo === 'short' || !esCanalShort(f.id));
+  const opciones = tipo === 'short' ? { short: true } : tipo === 'documental' ? { documental: 'mezcla' } : {};
+  if (estilos.length === 1) { elegirEstiloLight(estilos[0], opciones); return; }
+  if (!estilos.length) { irALight('crear'); return; }
+  irALight('elegir', { tipoNuevo: tipo });
+}
+
+function vistaElegirMind() {
+  const l = APP.light;
+  const tipo = l.tipoNuevo || 'video';
+  const nombre = { video: 'vídeo', short: 'short', documental: 'documental' }[tipo];
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(h('div', { clase: 'mind-cab' },
+    h('div', {}, h('div', { clase: 'eyebrow' }, `Nuevo ${nombre}`),
+      h('h1', {}, '¿Con qué estilo?'),
+      h('p', { clase: 'meta' }, 'El estilo pone el dibujo, la voz y el tono. Lo demás lo decides en el encargo.'))));
+  const rejilla = h('div', { clase: 'rejilla-universos' });
+  presetsLight().filter(f => tipo === 'short' || !esCanalShort(f.id))
+    .forEach((f, i) => rejilla.appendChild(tarjetaUniverso(f, i, () => elegirEstiloLight(f,
+      tipo === 'short' ? { short: true } : tipo === 'documental' ? { documental: 'mezcla' } : {}))));
+  caja.appendChild(rejilla);
+  return caja;
+}
+
+function tarjetaUniverso(ficha, indice, alPulsar) {
+  const c = cuentasDeEstilo(ficha.id);
+  const vinetas = ficha.vinetas || [];
+  const textos = vinetas.map(v => String((v && (v.texto || v)) || ''));
+  // la etiqueta es el idioma; el subtitulo, como se ve (no «6 referencias»)
+  const etiqueta = textos[0] || 'Estilo';
+  const sub = textos.slice(1).find(t => t && !/^\d+ referencias?/i.test(t)) || '';
+  const texto = n => (n === 1 ? sub : textos[n] || '');
+  return h('button', { clase: 'universo', onclick: alPulsar || (() => abrirEstiloLight(ficha)) },
+    h('div', { clase: 'universo-cara' },
+      ficha.hay_miniatura ? h('img', { src: API.presetCanalMiniatura(ficha.id, ficha.modificado), alt: '', loading: 'lazy' }) : null,
+      h('span', { clase: 'universo-etiqueta' }, etiqueta),
+      h('span', { clase: 'universo-num' }, String(indice + 1).padStart(2, '0'))),
+    h('div', { clase: 'universo-cuerpo' },
+      h('b', {}, ficha.nombre || ficha.id),
+      h('small', {}, texto(1).slice(0, 70)),
+      h('div', { clase: 'universo-pie' },
+        h('span', {}, `${c.videos} vídeos · ${c.documentales} docs · ${c.shorts} shorts`),
+        h('span', { clase: 'abrir' }, 'Abrir'))));
+}
+
+function vistaInicioMind() {
+  cargarPanelMind();
+  const d = PANEL.datos || {};
+  const videos = recientesPrimero(videosLight());
+  const estilos = presetsLight().filter(f => !esCanalShort(f.id));
+  const caja = h('div', { clase: 'casa-light inicio-mind' });
+
+  caja.appendChild(h('div', { clase: 'mind-cab' },
+    h('div', {},
+      h('div', { clase: 'eyebrow' }, 'Tu panel de inicio'),
+      h('h1', {}, 'Todo empieza con una idea.'),
+      h('p', { clase: 'meta' }, 'Tu próxima historia tiene un lugar aquí.')),
+    h('button', { clase: 'primario grande', onclick: () => nuevoProyectoMind('video') }, '＋  Crear proyecto')));
+
+  const cifras = [
+    ['videos', presetsLight().length, 'estilos de canal'],
+    ['todos', videos.length, 'vídeos creados'],
+    ['cola', (d.activos || []).length, 'en producción'],
+    ['presupuesto', d.gasto_mes_usd !== undefined ? `${Number(d.gasto_mes_usd).toFixed(2).replace('.', ',')} $` : '—', 'gasto del mes'],
+  ];
+  const fila = h('div', { clase: 'cifras-mind' });
+  cifras.forEach(([zona, numero, texto]) => {
+    const b = h('button', { clase: 'cifra', onclick: () => irAZonaLight(zona) });
+    b.appendChild(iconoNav(ICONOS_MIND[zona]));
+    b.appendChild(h('b', {}, String(numero)));
+    b.appendChild(h('span', {}, texto));
+    fila.appendChild(b);
+  });
+  caja.appendChild(fila);
+
+  // EN PRODUCCIÓN: lo que corre ahora; si no corre nada, lo último tocado
+  const activo = (d.activos || []).find(a => a.estado === 'ejecutando') || (d.activos || [])[0];
+  const destacado = (activo && videos.find(v => v.id === activo.proyecto)) || videos[0];
+  const media = h('div', { clase: 'inicio-medio' });
+  if (destacado) {
+    const pct = activo && activo.proyecto === destacado.id ? Math.round((Number(activo.progreso) || 0) * 100) : null;
+    const estilo = fichaLight(destacado.estilo_light);
+    const imagen = imagenVideo(destacado, 1024);
+    media.appendChild(h('section', { clase: 'destacado-mind', estilo: imagen ? `--fondo:url("${imagen}")` : '' },
+      h('div', { clase: 'chip-mind' }, pct !== null ? 'En producción' : 'Último proyecto',
+        pct !== null ? h('span', { clase: 'pct' }, `${pct} %`) : null),
+      h('h2', {}, destacado.nombre || destacado.id),
+      h('p', {}, [estilo ? estilo.nombre : '', tipoDeVideo(destacado),
+        destacado.tiene_mp4 ? 'Montado' : 'En curso'].filter(Boolean).join(' · ')),
+      h('div', { clase: 'fila' },
+        h('button', { clase: 'blanco', onclick: () => abrirVideoLight(destacado.id) }, 'Continuar proyecto'),
+        h('span', { clase: 'crece' }),
+        activo && activo.proyecto === destacado.id ? h('small', {}, activo.mensaje ? String(activo.mensaje).split('—')[0].trim() : 'Generando') : null)));
+  }
+  const crear = h('section', { clase: 'crear-mind' }, h('h3', {}, '¿Qué creamos hoy?'));
+  [['video', 'todos', 'Un nuevo vídeo', 'De una idea a una historia completa'],
+   ['short', 'shorts', 'Un short', 'Menos de un minuto. Toda tu esencia.'],
+   ['documental', 'documentales', 'Un documental', 'El mundo real, contado a tu manera.']]
+    .forEach(([tipo, icono, titulo, sub]) => {
+      const b = h('button', { clase: 'opcion-mind', onclick: () => nuevoProyectoMind(tipo) });
+      const ico = h('span', { clase: 'ico' });
+      ico.appendChild(iconoNav(ICONOS_MIND[icono]));
+      b.appendChild(ico);
+      b.appendChild(h('span', { clase: 'crece' }, h('b', {}, titulo), h('small', {}, sub)));
+      b.appendChild(iconoNav(ICONOS_MIND.flecha));
+      crear.appendChild(b);
+    });
+  media.appendChild(crear);
+  caja.appendChild(media);
+
+  const ver = (texto, zona) => h('button', { clase: 'enlace ver-mas', onclick: () => irAZonaLight(zona) }, `${texto} ›`);
+  caja.appendChild(cabeceraSeccion('Tus universos creativos', `${estilos.length} estilos`, ver('Ver estilos', 'videos')));
+  const rejilla = h('div', { clase: 'rejilla-universos' });
+  estilos.slice(0, 3).forEach((f, i) => rejilla.appendChild(tarjetaUniverso(f, i)));
+  if (!estilos.length) rejilla.appendChild(tarjetaNuevoEstilo(0));
+  caja.appendChild(rejilla);
+
+  if (videos.length) {
+    caja.appendChild(cabeceraSeccion('Seguir donde lo dejaste', '', ver('Ver proyectos', 'todos')));
+    const lista = h('div', { clase: 'seguir-mind' });
+    videos.slice(0, 4).forEach(v => {
+      const estilo = fichaLight(v.estilo_light);
+      lista.appendChild(h('button', { clase: 'fila-mind', onclick: () => abrirVideoLight(v.id) },
+        v.miniatura ? h('img', { src: imagenVideo(v), alt: '', loading: 'lazy' }) : h('span', { clase: 'sin-img' }, (v.nombre || '?').slice(0, 1)),
+        h('span', { clase: 'crece' }, h('b', {}, v.nombre || v.id),
+          h('small', {}, [tipoDeVideo(v), estilo ? estilo.nombre : '', v.tiene_mp4 ? 'Montado' : 'En curso'].filter(Boolean).join(' · '))),
+        iconoNav(ICONOS_MIND.flecha)));
+    });
+    caja.appendChild(lista);
+  }
+  caja.appendChild(h('div', { clase: 'pie-mind' }, 'Hecho para contar historias.'));
+  return caja;
+}
+
+/* ------------------------------------------------- Vídeos: todos los largos */
+function vistaTodosMind() {
+  const caja = h('div', { clase: 'casa-light' });
+  const lista = recientesPrimero(videosLight().filter(v => !esShortVideo(v)));
+  caja.appendChild(h('div', { clase: 'mind-cab' },
+    h('div', {}, h('div', { clase: 'eyebrow' }, 'Producción'), h('h1', {}, 'Tus vídeos'),
+      h('p', { clase: 'meta' }, `${lista.length} vídeos y documentales, del más reciente al más antiguo`)),
+    h('button', { clase: 'primario grande', onclick: () => nuevoProyectoMind('video') }, '＋  Nuevo vídeo')));
+  const rejilla = h('div', { clase: 'rejilla-videos' });
+  lista.forEach(v => rejilla.appendChild(tarjetaVideoLight(v, { conEstilo: true, atajosShort: true })));
+  caja.appendChild(lista.length ? rejilla : h('div', { clase: 'vacio-seccion' }, 'Todavía no hay vídeos.'));
+  return caja;
+}
+
+/* ------------------------------------------------- Ideas: elegir el estilo */
+function vistaIdeasZonaMind() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(h('div', { clase: 'mind-cab' },
+    h('div', {}, h('div', { clase: 'eyebrow' }, 'Estudio'), h('h1', {}, 'Ideas y nicho'),
+      h('p', { clase: 'meta' }, 'Elige un estilo: su nicho, ideas de vídeo, la competencia, tus vídeos revisados y un chat creativo.'))));
+  const rejilla = h('div', { clase: 'rejilla-universos' });
+  presetsLight().forEach((f, i) => rejilla.appendChild(tarjetaUniverso(f, i,
+    () => irALight('ideas', { estiloAbierto: f.id }))));
+  caja.appendChild(rejilla);
+  return caja;
+}
+
+/* ------------------------------------------------- Cola */
+const COLA_MIND = { datos: null, ultima: 0 };
+
+function cargarColaMind(forzar) {
+  if (!forzar && Date.now() - COLA_MIND.ultima < 4000) return;
+  COLA_MIND.ultima = Date.now();
+  pedir(`${BASE}/api/trabajos`).then(d => {
+    COLA_MIND.datos = (d || {}).trabajos || [];
+    if (APP.light.vista === 'galeria' && zonaLight() === 'cola') {
+      pintarLight();
+      if (COLA_MIND.datos.some(t => ['pendiente', 'ejecutando'].includes(t.estado))) {
+        setTimeout(() => cargarColaMind(true), 5000);
+      }
+    }
+  }).catch(() => { COLA_MIND.datos = COLA_MIND.datos || []; });
+}
+
+function vistaColaMind() {
+  cargarColaMind();
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(h('div', { clase: 'mind-cab' },
+    h('div', {}, h('div', { clase: 'eyebrow' }, 'Producción'), h('h1', {}, 'Cola'),
+      h('p', { clase: 'meta' }, 'Lo que se está generando y lo que espera turno. Van de uno en uno.'))));
+  const todos = COLA_MIND.datos;
+  if (!todos) { caja.appendChild(h('div', { clase: 'cargando' }, 'cargando…')); return caja; }
+  const nombreDe = pid => ((videosLight().find(v => v.id === pid) || {}).nombre) || pid;
+  const activos = todos.filter(t => ['pendiente', 'ejecutando'].includes(t.estado));
+  const hechos = todos.filter(t => !['pendiente', 'ejecutando'].includes(t.estado)).slice(-8).reverse();
+  const fila = t => {
+    const pct = Math.round((Number(t.progreso) || 0) * 100);
+    return h('div', { clase: 'fila-cola' },
+      h('div', { clase: 'crece' },
+        h('b', {}, nombreDe(t.proyecto)),
+        h('small', {}, `${t.nombre || ''} · ${t.estado}${t.estado === 'ejecutando' ? ` · ${pct} %` : ''}`),
+        t.estado === 'ejecutando' ? h('div', { clase: 'barra-mind' }, h('span', { estilo: `width:${pct}%` })) : null,
+        t.mensaje && t.estado === 'ejecutando' ? h('small', { clase: 'meta' }, String(t.mensaje).slice(0, 140)) : null,
+        t.error ? h('small', { clase: 'error-cola' }, String(t.error).slice(0, 200)) : null),
+      h('button', { clase: 'mini', onclick: () => abrirVideoLight(t.proyecto) }, 'Abrir'),
+      ['pendiente', 'ejecutando'].includes(t.estado) ? h('button', {
+        clase: 'mini fantasma peligro',
+        onclick: async () => {
+          if (!confirm('¿Parar este trabajo? Lo ya hecho se conserva.')) return;
+          try { await pedir(API.trabajo(t.id) + '/cancelar', { method: 'POST' }); cargarColaMind(true); }
+          catch (e) { toast(e.message, true); }
+        },
+      }, 'Parar') : null);
+  };
+  caja.appendChild(cabeceraSeccion('En marcha', activos.length ? `${activos.length}` : 'nada ahora mismo'));
+  if (activos.length) caja.appendChild(h('div', { clase: 'lista-cola' }, ...activos.map(fila)));
+  if (hechos.length) {
+    caja.appendChild(cabeceraSeccion('Terminados hace poco'));
+    caja.appendChild(h('div', { clase: 'lista-cola' }, ...hechos.map(fila)));
+  }
+  return caja;
+}
+
+/* ------------------------------------------------- Presupuesto */
+const SALDO_MIND = { datos: null };
+
+function vistaPresupuestoMind() {
+  cargarPanelMind();
+  if (!SALDO_MIND.datos && !SALDO_MIND.pidiendo) {
+    SALDO_MIND.pidiendo = true;
+    pedir(`${BASE}/api/saldo`).then(d => { SALDO_MIND.datos = d || {}; pintarLight(); })
+      .catch(() => { SALDO_MIND.datos = {}; }).finally(() => { SALDO_MIND.pidiendo = false; });
+  }
+  const d = PANEL.datos || {};
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(h('div', { clase: 'mind-cab' },
+    h('div', {}, h('div', { clase: 'eyebrow' }, 'Producción'), h('h1', {}, 'Presupuesto'),
+      h('p', { clase: 'meta' }, 'Lo gastado este mes y lo que te queda en cada cuenta.')),
+    h('button', { clase: 'primario grande', onclick: () => conmutarConfig() }, 'Apuntar saldo')));
+  caja.appendChild(h('section', { clase: 'gasto-mind' },
+    h('small', {}, `Gasto de ${d.mes ? new Date(`${d.mes}-01T12:00:00`).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }) : 'este mes'}`),
+    h('b', {}, d.gasto_mes_usd !== undefined ? `${Number(d.gasto_mes_usd).toFixed(2).replace('.', ',')} $` : '—'),
+    h('small', { clase: 'meta' }, 'Guion, ideas, estudios y vídeos reales son gratis: esto es imágenes, voz y animación.')));
+  const cuentas = Object.entries((SALDO_MIND.datos || {}).cuentas || {});
+  const rejilla = h('div', { clase: 'rejilla-saldo' });
+  cuentas.forEach(([id, c]) => rejilla.appendChild(h('div', { clase: 'saldo-mind' + (c.bajo ? ' bajo' : '') },
+    h('small', {}, c.etiqueta || id),
+    h('b', {}, c.apuntado ? `${Number(c.restante || 0).toFixed(2).replace('.', ',')} $` : 'sin apuntar'),
+    c.apuntado ? h('small', { clase: 'meta' }, `gastado ${Number(c.gastado || 0).toFixed(2)} $ de ${Number(c.cargado || 0).toFixed(2)} $`) : null,
+    c.recarga ? h('a', { href: c.recarga, target: '_blank', rel: 'noopener' }, 'Recargar ↗') : null)));
+  if (cuentas.length) caja.appendChild(rejilla);
+  return caja;
+}
+
+/* ------------------------------------------------- Papelera */
+const PAPELERA_MIND = { datos: null };
+
+function vistaPapeleraMind() {
+  if (!PAPELERA_MIND.datos && !PAPELERA_MIND.pidiendo) {
+    PAPELERA_MIND.pidiendo = true;
+    pedir(API.papelera()).then(d => { PAPELERA_MIND.datos = (d || {}).papelera || []; pintarLight(); })
+      .catch(() => { PAPELERA_MIND.datos = []; }).finally(() => { PAPELERA_MIND.pidiendo = false; });
+  }
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(h('div', { clase: 'mind-cab' },
+    h('div', {}, h('div', { clase: 'eyebrow' }, 'Producción'), h('h1', {}, 'Papelera'),
+      h('p', { clase: 'meta' }, 'Los vídeos que has apartado. Se pueden recuperar tal cual estaban.'))));
+  const lista = PAPELERA_MIND.datos;
+  if (!lista) { caja.appendChild(h('div', { clase: 'cargando' }, 'cargando…')); return caja; }
+  if (!lista.length) { caja.appendChild(h('div', { clase: 'vacio-seccion' }, 'La papelera está vacía.')); return caja; }
+  caja.appendChild(h('div', { clase: 'lista-cola' }, ...lista.map(p => h('div', { clase: 'fila-cola' },
+    h('div', { clase: 'crece' }, h('b', {}, p.nombre || p.id),
+      h('small', {}, `apartado el ${String(p.apartado || '').slice(0, 8).replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1')}`)),
+    h('button', {
+      clase: 'mini', onclick: async () => {
+        try {
+          await pedir(`${API.papeleraFicha(p.carpeta)}/restaurar`, { method: 'POST' });
+          toast(`«${p.nombre || p.id}» recuperado`);
+          PAPELERA_MIND.datos = null;
+          await cargarGaleriaLight(true);
+        } catch (e) { toast(e.message, true); }
+      },
+    }, 'Recuperar')))));
+  return caja;
 }
 
 function shortsLight() { return (APP.light.datos || {}).shorts || { canales: [], recortes: [] }; }
@@ -5453,6 +5880,13 @@ function recientesPrimero(lista) {
 /* LA CASA: los estilos en tarjetas, y debajo lo último que se tocó para
    retomarlo de un clic. La lista completa de cada estilo está DENTRO de él. */
 function vistaGaleriaLight() {
+  const zona = zonaLight();
+  if (zona === 'inicio') return vistaInicioMind();
+  if (zona === 'todos') return vistaTodosMind();
+  if (zona === 'ideas') return vistaIdeasZonaMind();
+  if (zona === 'cola') return vistaColaMind();
+  if (zona === 'presupuesto') return vistaPresupuestoMind();
+  if (zona === 'papelera') return vistaPapeleraMind();
   const caja = h('div', { clase: 'casa-light' });
   caja.appendChild(selectorZonaLight());
   if (zonaLight() === 'shorts') {
