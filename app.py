@@ -859,6 +859,9 @@ def listar_proyectos():
             "estilo_light": ficha.get(CONFIG_ESTILO_LIGHT) or "",
             # de que video salio, si es un short: la pantalla los separa
             "short_de": ficha.get(CONFIG_SHORT_DE) or "",
+            # si es el DOBLAJE de otro video, de cual y a que idioma
+            "doblaje_de": ficha.get(CONFIG_DOBLAJE_DE) or "",
+            "doblaje_idioma": ficha.get("doblaje_idioma") or "",
             # un short hecho DESDE CERO con un canal de shorts no sale de
             # ningun video, pero tambien es un short
             "short": bool(ficha.get(CONFIG_SHORT) or ficha.get(CONFIG_SHORT_DE)),
@@ -8634,6 +8637,8 @@ CONFIG_VIDEO_LIGHT = "video_light"
 
 #: Y de que estilo salio, para poder decirlo y para poder volver a aplicarlo.
 CONFIG_ESTILO_LIGHT = "estilo_light"
+# de que video es doblaje este (pasos/doblaje.py)
+CONFIG_DOBLAJE_DE = "doblaje_de"
 
 #: Las tandas del modo light, en orden, con las pestanas que recorre cada una.
 TANDAS_LIGHT = [
@@ -8851,6 +8856,9 @@ def _coste_previsto(ctx, pestanas):
     # cuesta si nada cambia. Ensenar solo uno de los dos miente en un sentido o
     # en el otro: uno asusta al que retoma, el otro promete barato de mas.
     hechas = _imagenes_ya_generadas(ctx, planos) if imagenes else 0
+    # un DOBLAJE no dibuja: toma las imagenes del original (pasos/doblaje.py)
+    if assets.get("doblaje_de"):
+        hechas = imagenes
     hechas = min(hechas, imagenes)
     por_generar = max(0, imagenes - hechas)
     # LOS CLIPS DE VEO, solo si el render los pide. Sin plan todavia no hay
@@ -9913,6 +9921,85 @@ def borrar_trabajado(ident: str):
     except ValueError as fallo:
         raise ErrorApi(404, str(fallo))
     return {"borrado": ident}
+
+
+@app.get("/api/proyectos/{pid}/doblajes")
+def leer_doblajes(pid: str):
+    """Los doblajes de este video (pasos/doblaje.py) y de que video es doblaje."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    ctx = contexto(pid)
+    return {"doblajes": PASOS_MODULOS.doblaje.leer(ctx.proyecto),
+            "idiomas": PASOS_MODULOS.doblaje.IDIOMAS,
+            "idioma": PASOS_MODULOS.p4_voz.idioma_de_salida(ctx.proyecto) or "es",
+            "doblaje_de": ctx.proyecto.config.get(CONFIG_DOBLAJE_DE) or ""}
+
+
+@app.post("/api/proyectos/{pid}/doblar")
+def doblar_video(pid: str, cuerpo: dict = Body(default=None)):
+    """El mismo video en otro idioma: traduce el guion (gratis) y crea el video
+    hermano, que toma las imagenes del original (0 $). Solo la voz cuesta, y se
+    paga despues con su boton, como siempre. {idioma, voz: nativa|misma}"""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    ctx = contexto(pid)
+    datos = _cuerpo(cuerpo)
+    destino = str(datos.get("idioma") or "").strip().lower()
+    modo_voz = "misma" if datos.get("voz") == "misma" else "nativa"
+    estilo = ctx.proyecto.config.get(CONFIG_ESTILO_LIGHT) or ""
+    if not estilo:
+        raise ErrorApi(400, "este video no tiene estilo: el doblaje se hace desde el modo light")
+    if ctx.proyecto.config.get(CONFIG_DOBLAJE_DE):
+        raise ErrorApi(400, "este video ya es un doblaje: dobla el original")
+    origen_carpeta, _ = PASOS_MODULOS.doblaje.origen_de(ctx.proyecto, pid)
+    if not origen_carpeta:
+        raise ErrorApi(400, "este video todavia no tiene imagenes: generalas antes de doblarlo")
+    editados = ((ctx.estado.params("guion") or {}).get("bloques")) or {}
+    bloques = []
+    for b in _bloques_del_guion(ctx):
+        cambio = editados.get(b["id"])
+        texto = cambio.get("texto") if isinstance(cambio, dict) else cambio
+        bloques.append({"id": b["id"], "texto": (texto if isinstance(texto, str) and texto.strip() else b["texto"])})
+    origen = PASOS_MODULOS.p4_voz.idioma_de_salida(ctx.proyecto) or "es"
+    sin_unidades = lambda d: {k: v for k, v in (d or {}).items() if k != "unidades"}
+
+    def crear(titulo, traducidos):
+        brief = ctx.estado.params("brief") or {}
+        es_short = bool(ctx.proyecto.config.get(CONFIG_SHORT))
+        r = crear_video_light(estilo, {
+            "nombre": f"{titulo} [{destino.upper()}]"[:60],
+            "material": "\n\n".join(b["texto"] for b in traducidos), "guion_propio": True,
+            "duracion_objetivo_s": brief.get("duracion_objetivo_s"),
+            "formato": brief.get("formato"), "short": es_short, "viral": False})
+        nuevo = (r.get("proyecto") or {}).get("id")
+        ctx2 = contexto(nuevo)
+        ctx2.estado.actualizar_params("brief", {"idioma_salida": destino})
+        voz = sin_unidades(ctx.estado.params("voz"))
+        voz.pop("bloques", None)
+        voz.update(idioma=destino, voz_id=PASOS_MODULOS.doblaje.voz_para(voz, destino, modo_voz))
+        ctx2.estado.actualizar_params("voz", voz)
+        assets = ctx.estado.params("assets") or {}
+        ctx2.estado.actualizar_params("assets", {"doblaje_de": pid, "calidad": assets.get("calidad") or "low"})
+        for paso in ("callouts", "render"):
+            ctx2.estado.actualizar_params(paso, sin_unidades(ctx.estado.params(paso)))
+        # los clips animados no se copian: el doblaje sale quieto, gratis
+        ctx2.estado.actualizar_params("render", {"video_ia": ""})
+        ctx2.proyecto.config[CONFIG_DOBLAJE_DE] = pid
+        ctx2.proyecto.config["doblaje_idioma"] = destino
+        for clave in (CONFIG_DOCUMENTAL, CONFIG_SHORT_DE):
+            if ctx.proyecto.config.get(clave):
+                ctx2.proyecto.config[clave] = ctx.proyecto.config[clave]
+        ctx2.proyecto.guardar_config()
+        ctx2.bitacora.anotar("doblaje_creado", None, {"de": pid, "idioma": destino})
+        # el guion (gratis) se lanza ya; la voz espera a que se pulse con su precio
+        generar_video(nuevo, {"tanda": "guion", "modo": "pendientes"})
+        return nuevo
+
+    try:
+        return {"doblajes": PASOS_MODULOS.doblaje.lanzar(
+            ctx.proyecto, bloques, destino, origen, ctx.proyecto.config.get("nombre", pid), crear)}
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
 
 
 def _marca_estilo(estilo):

@@ -6749,7 +6749,7 @@ function tarjetaVideoLight(video, opciones) {
     },
       h('div', { clase: 'cara-v' }, cara, sellos),
       h('div', { clase: 'cuerpo-v' },
-        h('div', { clase: 'nombre' }, video.nombre || video.id),
+        h('div', { clase: 'nombre' }, video.doblaje_idioma ? `🌍 ${video.nombre || video.id}` : (video.nombre || video.id)),
         h('div', { clase: 'meta' }, [estilo ? estilo.nombre : '', fechaCorta(video.actualizado) || '']
           .filter(Boolean).join(' · ')))),
     acciones);
@@ -11373,6 +11373,7 @@ function vistaVideoLight() {
   caja.appendChild(enVivo(filaVideoIaLight));
   caja.appendChild(enVivo(bloqueMiniaturasLight));
   caja.appendChild(enVivo(bloquePublicarLight));
+  caja.appendChild(enVivo(bloqueDoblajeLight));
 
   /* LA TIRA DE VINETAS SOLO MIENTRAS SE GENERA.
      Con el video ya montado esta pantalla es para VERLO y comentarlo, y
@@ -14810,5 +14811,100 @@ function vistaMarcaZona() {
     h('p', { clase: 'meta' }, 'En un short cada segundo cuenta: por defecto solo lleva la marca de agua (más arriba, para no chocar con los botones de TikTok).'),
     h('div', { clase: 'fila casillas' }, ...[['agua', 'Marca de agua'], ['intro', 'Intro'], ['outro', 'Cierre']]
       .map(([k, t]) => interruptorMarca(t, s[k], v => guardarMarca(id, { en_shorts: { [k]: v } }))))));
+  return caja;
+}
+
+/* ============================================================== DOBLAJE
+ *
+ * El mismo vídeo en otro idioma (pasos/doblaje.py): traduce el guion gratis y
+ * crea un vídeo hermano que usa las MISMAS imágenes. Solo se paga la voz nueva.
+ */
+var DOBLAJE = { datos: {}, sondeo: null, idioma: 'en', voz: 'nativa' };
+var BANDERAS = { en: '🇺🇸', pt: '🇧🇷', fr: '🇫🇷', it: '🇮🇹', de: '🇩🇪', es: '🇪🇸' };
+
+function cargarDoblajes(pid, forzar) {
+  if (!forzar && DOBLAJE.datos[pid]) return;
+  DOBLAJE.datos[pid] = DOBLAJE.datos[pid] || { cargando: true };
+  pedir(`${API.proyecto(pid)}/doblajes`).then(d => {
+    DOBLAJE.datos[pid] = d;
+    refrescarVivosLight();
+    sondearDoblajes(pid);
+  }).catch(() => { DOBLAJE.datos[pid] = { error: true }; });
+}
+
+function sondearDoblajes(pid) {
+  clearTimeout(DOBLAJE.sondeo);
+  const d = DOBLAJE.datos[pid] || {};
+  if (!Object.values(d.doblajes || {}).some(x => x.estado === 'pensando')) return;
+  DOBLAJE.sondeo = setTimeout(() => {
+    cargarDoblajes(pid, true);
+    // el doblaje recién creado tiene que salir en las listas
+    const hecho = Object.values((DOBLAJE.datos[pid] || {}).doblajes || {}).some(x => x.estado === 'listo');
+    if (hecho && APP.light.datos) {
+      pedir(API.proyectos()).then(r => {
+        APP.light.datos.videos = (r.proyectos || []).filter(p => p.video_light)
+          .sort((x, y) => String(y.actualizado || '').localeCompare(String(x.actualizado || '')));
+      }).catch(() => {});
+    }
+  }, 4000);
+}
+
+function bloqueDoblajeLight() {
+  const v = videoAbierto();
+  if (!v.pid || !v.guion) return null;
+  cargarDoblajes(v.pid);
+  const d = DOBLAJE.datos[v.pid] || {};
+  if (!d.idiomas) return null;
+  const caja = h('section', { clase: 'bloque-shorts doblaje' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, '🌍 Doblaje'),
+      h('span', { clase: 'meta' }, 'el mismo vídeo en otro idioma, con las mismas imágenes')));
+  if (d.doblaje_de) {
+    const original = videosLight().find(x => x.id === d.doblaje_de);
+    caja.appendChild(h('div', { clase: 'fila' },
+      h('span', { clase: 'crece' }, `Este vídeo es el doblaje ${BANDERAS[d.idioma] || ''} de «${(original || {}).nombre || d.doblaje_de}». `
+        + 'Las imágenes vienen del original (0 $): al generar solo se paga la voz.'),
+      h('button', { clase: 'mini', onclick: () => abrirVideoLight(d.doblaje_de) }, 'Abrir el original')));
+    return caja;
+  }
+  const hechos = d.doblajes || {};
+  const libres = Object.keys(d.idiomas).filter(i => i !== d.idioma);
+  if (!libres.includes(DOBLAJE.idioma)) DOBLAJE.idioma = libres[0];
+  Object.entries(hechos).forEach(([idioma, x]) => {
+    const fila = h('div', { clase: 'fila conexion' },
+      h('b', {}, `${BANDERAS[idioma] || ''} ${d.idiomas[idioma] || idioma}`));
+    if (x.estado === 'pensando') {
+      fila.appendChild(h('span', { clase: 'crece meta' }, 'traduciendo el guion y preparando el vídeo… (1-3 min)'));
+    } else if (x.estado === 'error') {
+      fila.appendChild(h('span', { clase: 'crece' }, cajaError(x.error || 'ha fallado')));
+    } else {
+      fila.appendChild(h('span', { clase: 'crece meta' }, `«${x.titulo || ''}»`));
+      fila.appendChild(h('button', { clase: 'mini primario', onclick: () => abrirVideoLight(x.pid) }, 'Abrir'));
+    }
+    caja.appendChild(fila);
+  });
+  if (!v.planos.length) {
+    caja.appendChild(h('p', { clase: 'meta' }, 'Cuando el vídeo tenga sus imágenes podrás doblarlo a otro idioma sin volver a pagarlas.'));
+    return caja;
+  }
+  caja.appendChild(h('div', { clase: 'fila' },
+    h('select', { onchange: ev => { DOBLAJE.idioma = ev.target.value; } },
+      libres.map(i => h('option', { value: i, selected: i === DOBLAJE.idioma },
+        `${BANDERAS[i] || ''} ${d.idiomas[i]}${hechos[i] && hechos[i].estado === 'listo' ? ' (ya hecho: rehacer)' : ''}`))),
+    h('select', { onchange: ev => { DOBLAJE.voz = ev.target.value; } },
+      [['nativa', 'Voz nativa de ese idioma'], ['misma', 'La misma voz (con acento)']]
+        .map(([x, t]) => h('option', { value: x, selected: DOBLAJE.voz === x }, t))),
+    h('span', { clase: 'crece' }),
+    h('button', { clase: 'primario', disabled: Object.values(hechos).some(x => x.estado === 'pensando'), onclick: async () => {
+      try {
+        const r = await pedir(`${API.proyecto(v.pid)}/doblar`, { method: 'POST', cuerpo: { idioma: DOBLAJE.idioma, voz: DOBLAJE.voz } });
+        DOBLAJE.datos[v.pid] = Object.assign({}, d, { doblajes: r.doblajes });
+        toast('traduciendo el guion: en 1-3 minutos tendrás el vídeo doblado');
+        refrescarVivosLight();
+        sondearDoblajes(v.pid);
+      } catch (e) { toast(e.message, true); }
+    } }, '🌍 Doblar (traducir es gratis)')));
+  caja.appendChild(h('p', { clase: 'meta' },
+    'Se crea un vídeo nuevo con el guion traducido y las mismas imágenes. Al abrirlo, «Generar» solo cobra la voz nueva '
+    + '(lo mismo que costó la del original, normalmente céntimos). Los subtítulos y rótulos salen ya traducidos.'));
   return caja;
 }

@@ -67,6 +67,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cartelas  # noqa: E402
 import corrector  # noqa: E402
 import cta  # noqa: E402
+import doblaje  # noqa: E402
 import encuadres  # noqa: E402
 import estadisticas  # noqa: E402
 import medios  # noqa: E402
@@ -131,6 +132,10 @@ PARAMS_POR_DEFECTO = {
     "semilla": 7,
     "motor_imagen": "openai",          # openai | adoptar
     "imagenes_previas": [],            # carpetas de arte ya aprobado
+    # EL DOBLAJE (pasos/doblaje.py): el id del video original. Con el, cada
+    # plano toma la imagen del plano del original que cuenta lo mismo y no se
+    # dibuja nada (0 $).
+    "doblaje_de": "",
     # Fotogramas REALES del video de referencia, aprobados a mano, para que el
     # dibujo de una persona o un sitio concreto se parezca al original. Vacio en
     # los proyectos que no lo usen: no cambia nada de lo de siempre.
@@ -4342,6 +4347,8 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_assets=False,
     # ---------------------------------------------------------------- assets
     resultados = {}
     inventario = {}
+    if p.get("doblaje_de"):
+        doblaje.preparar_reparto(proyecto, p["doblaje_de"], dirs["reparto"])
     pendientes = [(uid, ficha) for uid, ficha in sorted(necesarios.items())
                   if tipos is None or ficha["tipo"] in tipos]
     for indice, (uid, ficha) in enumerate(pendientes):
@@ -4362,6 +4369,11 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_assets=False,
                 medios.copiar(ficha["hoja_canal"], destino)
             resultados[uid] = {"tipo": "reparto", "origen": "canal", "coste": 0.0,
                                "png": os.path.relpath(destino, trabajo)}
+        elif ficha["tipo"] == "reparto" and p.get("doblaje_de") and not os.path.exists(
+                os.path.join(dirs["reparto"], f"{ficha['nombre']}.png")):
+            # EN UN DOBLAJE NO SE DIBUJA NADA: la hoja solo serviria de
+            # referencia para dibujar planos, y los planos vienen del original
+            resultados[uid] = {"tipo": "reparto", "origen": "omitida", "coste": 0.0}
         elif ficha["tipo"] == "reparto":
             destino = os.path.join(dirs["reparto"], f"{ficha['nombre']}.png")
             if pedido(uid) or not os.path.exists(destino):
@@ -4442,6 +4454,11 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_assets=False,
         medios.escribir_json(os.path.join(trabajo, "dependencias.json"),
                              plan["dependencias"])
         return _salidas_parciales(plan, resultados, inventario, necesarios, avisar)
+    if p.get("doblaje_de"):
+        avisar(0.34, "doblaje: tomando las imagenes del video original")
+        copiadas = doblaje.preparar_imagenes(proyecto, p["doblaje_de"], escenas, dirs["escenas"],
+                                             _sin_imagen, _texto_clave)
+        avisar(0.35, f"doblaje: {copiadas} imagenes del original, 0 $")
     coste = _generar_escenas(plan, dirs, p, trabajo, toca, unidades,
                              resultados, avisar, forzar=rehacer,
                              notas_repaso=_notas_del_repaso(proyecto),

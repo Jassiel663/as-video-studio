@@ -475,6 +475,22 @@ def short_de_video(argumentos):
         f"short creado (proyecto={(datos.get('proyecto') or {}).get('id')}); falta generarlo."
 
 
+def doblar(argumentos):
+    """Dobla un video a otro idioma: traducir y crear es gratis (las imagenes
+    son las del original); la voz nueva se paga despues con `generar`."""
+    pid = _pid(argumentos)
+    if argumentos.get("solo_leer"):
+        codigo, datos = _llamar("GET", f"/api/proyectos/{_q(pid)}/doblajes")
+        return _error_de(codigo, datos) if codigo != 200 else _json(datos)
+    codigo, datos = _llamar("POST", f"/api/proyectos/{_q(pid)}/doblar",
+                            {"idioma": argumentos.get("idioma") or "en",
+                             "voz": "misma" if argumentos.get("voz") == "misma" else "nativa"})
+    return _error_de(codigo, datos) if codigo not in (200, 201, 202) else (
+        "doblaje en marcha: traduciendo el guion (1-3 min, gratis). Despues sale un video nuevo "
+        "con las mismas imagenes; para terminarlo, generar su voz (de pago, pide confirmacion) "
+        "y su render (0 $ de imagenes). Mira el estado con solo_leer=true.")
+
+
 def miniaturas(argumentos):
     """Tres miniaturas de YouTube para un video. DE PAGO (~0,25 $)."""
     pid = _pid(argumentos)
@@ -579,6 +595,11 @@ HERRAMIENTAS.update({
     "short_de_video": (short_de_video, "Crea un short con guion nuevo a partir de un video (crear es gratis). "
         "viral=true por defecto: mini guion con gancho y giros, cortes rapidos, subtitulos enormes, barra de progreso.",
         {"proyecto": _TXT, "duracion_s": _NUM, "viral": {"type": "boolean"}}),
+    "doblar": (doblar,
+        "Dobla un video a otro idioma (en, pt, fr, it, de, es): traduce el guion y crea un video "
+        "hermano con las MISMAS imagenes (gratis); luego solo se paga la voz. voz=nativa|misma. "
+        "solo_leer=true para ver los doblajes de un video.",
+        {"proyecto": _TXT, "idioma": _TXT, "voz": _TXT, "solo_leer": {"type": "boolean"}}),
     "miniaturas": (miniaturas, "Tres miniaturas de YouTube para un video (de pago, pide confirmacion).",
         {"proyecto": _TXT, "indicaciones": _TXT, "confirmo_coste": _CONF}),
     "publicar": (publicar,
