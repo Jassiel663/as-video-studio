@@ -5646,6 +5646,10 @@ function vistaEstiloLight() {
     h('button', { clase: 'primario', onclick: () => elegirEstiloLight(ficha) },
       deShorts ? '＋ Nuevo short' : '＋ Nuevo vídeo'),
     deShorts ? null : h('button', {
+      title: 'Un short vertical de 15 a 60 s con un tema nuevo y este estilo',
+      onclick: () => elegirEstiloLight(ficha, { short: true }),
+    }, '▯ Nuevo short'),
+    deShorts ? null : h('button', {
       title: 'Vídeos reales de Pexels y Pixabay donde encajan, y la IA en el resto',
       onclick: () => elegirEstiloLight(ficha, { documental: 'mezcla' }),
     }, '◉ Nuevo documental'),
@@ -5691,7 +5695,7 @@ function shortsDeEstilo(ficha, suyos) {
   const l = APP.light;
   const caja = h('div', {});
   const normales = suyos.filter(v => !esShortVideo(v));
-  const modos = MODOS_SHORT.filter(m => m.id !== 'cero' || esCanalShort(ficha.id));
+  const modos = MODOS_SHORT;
   if (!modos.some(m => m.id === l.modoShort)) l.modoShort = 'recorte';
   if (!l.shortSegundos) l.shortSegundos = SHORT_S.maximo;
   const bloque = h('section', { clase: 'bloque-shorts' },
@@ -6020,7 +6024,7 @@ function filaVideoLista(video) {
 const SHORT_S = { minimo: 15, maximo: 60, paso: 5 };
 
 const MODOS_SHORT = [
-  { id: 'cero', texto: 'Desde cero', pista: 'con un canal de shorts · se paga como un vídeo corto' },
+  { id: 'cero', texto: 'Desde cero', pista: 'con cualquier estilo, tema nuevo · se paga como un vídeo corto' },
   { id: 'video', texto: 'De un vídeo', pista: 'mismo material, guion corto nuevo · ~1–2 $' },
   { id: 'recorte', texto: 'Recorte gratis', pista: 'un trozo del vídeo ya montado · 0 $' },
 ];
@@ -6062,7 +6066,11 @@ function vistaShortsLight() {
   bloque.appendChild(h('div', { clase: 'pista' },
     (MODOS_SHORT.find(m => m.id === l.modoShort) || {}).pista || ''));
   const normales = videosLight().filter(v => !esShortVideo(v));
-  if (l.modoShort === 'cero') bloque.appendChild(creadorShortCero(canales));
+  // canales de shorts primero, y despues cualquier otro estilo
+  if (l.modoShort === 'cero') {
+    bloque.appendChild(creadorShortCero(
+      canales.concat(presetsLight().filter(f => !esCanalShort(f.id)))));
+  }
   else if (l.modoShort === 'video') bloque.appendChild(creadorShortVideo(normales));
   else bloque.appendChild(creadorRecorte(normales));
   caja.appendChild(bloque);
@@ -6118,17 +6126,20 @@ function selectorVideoShort(videos, clave) {
 
 /* DESDE CERO: se elige el canal y se abre su encargo, que con un canal de
    shorts ya viene en vertical y de 15 a 60 s (ver `elegirEstiloLight`). */
-function creadorShortCero(canales) {
+/* DESDE CERO: un short con un tema nuevo y CUALQUIER estilo. Un canal de
+   shorts ya nace vertical; un estilo de vídeos largos también vale: el encargo
+   se abre en vertical y de 15 a 60 s (`elegirEstiloLight` con `short`) sin
+   convertir el estilo en canal, y el short queda guardado dentro de su estilo. */
+function creadorShortCero(estilos) {
   const caja = h('div', {});
-  if (!canales.length) {
+  if (!estilos.length) {
     caja.appendChild(h('div', { clase: 'pista' },
-      'Todavía no tienes ningún canal de shorts. Crea uno arriba, o pasa uno de '
-      + 'tus estilos con «⋯ › Pasar a Shorts» en la zona Vídeos.'));
+      'Crea primero un estilo en la zona Estilos.'));
     return caja;
   }
-  const botones = h('div', { clase: 'fila' });
-  canales.forEach(ficha => botones.appendChild(h('button', {
-    clase: 'primario', onclick: () => elegirEstiloLight(ficha),
+  const botones = h('div', { clase: 'fila', estilo: 'flex-wrap:wrap;gap:8px' });
+  estilos.forEach(ficha => botones.appendChild(h('button', {
+    clase: 'primario', onclick: () => elegirEstiloLight(ficha, { short: true }),
   }, `Short con «${ficha.nombre}»`)));
   caja.appendChild(botones);
   return caja;
