@@ -3333,7 +3333,19 @@ def _correr_escenarios(avisar, ctx, ajuste_catalogo, peticion, rehacer):
 
     if (rehacer and cambio) or incompleto or not hay:
         avisar(0.02, "leyendo el guion para deducir quien sale y donde ocurre")
-        ficha = _correr_catalogo(_tramo(0.02, 0.33), ctx, ajuste_catalogo, peticion)
+        # EL TALLER DEL CANAL (pasos/canal.py): los personajes, objetos y
+        # lugares fijos del estilo se le dicen a Claude para que use sus ids,
+        # y despues se fusionan con su descripcion y su hoja ya dibujada
+        estilo_canal = ctx.proyecto.config.get(CONFIG_ESTILO_LIGHT) or ""
+        fijos = (PASOS_MODULOS.canal.peticion_para_catalogo(estilo_canal)
+                 if estilo_canal else "")
+        ficha = _correr_catalogo(_tramo(0.02, 0.33), ctx, ajuste_catalogo,
+                                 " ".join(x for x in (peticion, fijos) if x))
+        if estilo_canal:
+            entraron = PASOS_MODULOS.canal.fusionar(ficha, estilo_canal)
+            if entraron:
+                avisar(0.33, f"{entraron} personaje(s), objeto(s) o lugar(es) del "
+                             f"taller del canal")
         # Se guarda lo mismo que guardaba el PUT de aprobar: reparto, sitios y
         # beats. Lo demas que propone el catalogo (capitulos, componentes,
         # lugares) ya se descartaba al aprobarlo, asi que aqui tampoco entra --
@@ -9228,6 +9240,72 @@ def generar_video(pid: str, cuerpo: dict = Body(default=None)):
     return {"trabajo_id": trabajo_id, "pestanas": elegidas, "modo": modo,
             "plan": plan, "trabajo": ctx.gestor.estado(trabajo_id),
             "eventos": f"/api/trabajos/{trabajo_id}/eventos"}
+
+
+@app.get("/api/presets-light/{preset_id}/canal")
+def leer_canal_light(preset_id: str):
+    """El taller del canal: personajes, lugares y objetos fijos del estilo."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = PASOS_MODULOS.canal.leer(preset_id)
+    # las rutas de disco no bajan al navegador: la imagen se pide por su id
+    for tipo in PASOS_MODULOS.canal.TIPOS:
+        for ficha in datos[tipo].values():
+            ficha["hay_imagen"] = bool(ficha.get("imagen")) and os.path.exists(ficha["imagen"])
+            ficha["hay_foto"] = bool(ficha.get("foto")) and os.path.exists(ficha["foto"])
+            ficha.pop("imagen", None)
+            ficha.pop("foto", None)
+    return datos
+
+
+@app.post("/api/presets-light/{preset_id}/canal/{tipo}")
+def crear_en_canal_light(preset_id: str, tipo: str, cuerpo: dict = Body(default=None)):
+    """Crea un personaje, lugar u objeto del canal y dibuja su hoja (~0,10 $)."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = _cuerpo(cuerpo)
+    try:
+        return PASOS_MODULOS.canal.crear(preset_id, tipo, datos.get("nombre"),
+                                         datos.get("idea"), datos.get("foto") or "")
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.post("/api/presets-light/{preset_id}/canal/{tipo}/{ident}/rehacer")
+def rehacer_en_canal_light(preset_id: str, tipo: str, ident: str,
+                           cuerpo: dict = Body(default=None)):
+    """Vuelve a dibujar la hoja con una nota («mas joven», «sin gafas»)."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = _cuerpo(cuerpo)
+    try:
+        return PASOS_MODULOS.canal.crear(preset_id, tipo, datos.get("nombre"),
+                                         datos.get("idea"), datos.get("foto") or "",
+                                         ident=ident, nota=datos.get("nota") or "")
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.delete("/api/presets-light/{preset_id}/canal/{tipo}/{ident}")
+def borrar_de_canal_light(preset_id: str, tipo: str, ident: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    try:
+        PASOS_MODULOS.canal.borrar(preset_id, tipo, ident)
+    except ValueError as fallo:
+        raise ErrorApi(404, str(fallo))
+    return {"borrado": ident}
+
+
+@app.get("/api/presets-light/{preset_id}/canal/{tipo}/{ident}/imagen")
+def imagen_de_canal_light(preset_id: str, tipo: str, ident: str, foto: int = 0):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    ficha = (PASOS_MODULOS.canal.leer(preset_id).get(tipo) or {}).get(ident) or {}
+    ruta = ficha.get("foto" if foto else "imagen") or ""
+    if not ruta or not os.path.exists(ruta):
+        raise ErrorApi(404, "sin imagen")
+    return FileResponse(ruta, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/presets-light/{preset_id}/ideas")

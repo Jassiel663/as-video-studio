@@ -5597,6 +5597,7 @@ function prepararShortDe(video, modo) {
  */
 const PESTANAS_ESTILO = [
   ['videos', 'Vídeos'], ['documentales', 'Documentales'], ['shorts', 'Shorts'],
+  ['taller', '🎭 Taller'],
 ];
 
 function heroEstilo(ficha, extra) {
@@ -5663,12 +5664,14 @@ function vistaEstiloLight() {
   PESTANAS_ESTILO.forEach(([id, texto]) => tira.appendChild(h('button', {
     clase: 'pestana-e' + (id === l.pestanaEstilo ? ' activa' : ''),
     onclick: () => { l.pestanaEstilo = id; pintarLight(); },
-  }, texto, h('span', { clase: 'cuenta' }, String(cuentas[id] || 0)))));
+  }, texto, id in cuentas ? h('span', { clase: 'cuenta' }, String(cuentas[id] || 0)) : null)));
   caja.appendChild(tira);
 
   const suyos = recientesPrimero(videosDeEstilo(ficha.id));
   if (l.pestanaEstilo === 'shorts') {
     caja.appendChild(shortsDeEstilo(ficha, suyos));
+  } else if (l.pestanaEstilo === 'taller') {
+    caja.appendChild(tallerDeEstilo(ficha));
   } else {
     const doc = l.pestanaEstilo === 'documentales';
     const lista = suyos.filter(v => !esShortVideo(v) && !!v.documental === doc);
@@ -5941,6 +5944,154 @@ function vistaIdeasLight() {
     caja.appendChild(h('section', { clase: 'nicho' },
       h('ol', { clase: 'mejoras' }, ...(d.mejoras || []).map(m => h('li', {}, m)))));
   }
+  return caja;
+}
+
+
+/* ========================================================== EL TALLER
+ *
+ * Personajes, lugares y objetos FIJOS del estilo (pasos/canal.py): se crean
+ * una vez con su hoja dibujada en el estilo del canal y salen iguales en todos
+ * sus vídeos. Se describe la idea en una frase (y opcionalmente una foto o un
+ * dibujo); Claude escribe la descripción visual y se dibuja la hoja.
+ */
+const TALLER_TIPOS = [
+  ['personajes', '🧑 Personajes', 'el protagonista, su mascota, su jefa…'],
+  ['lugares', '🏠 Lugares', 'la oficina, su casa, el bar de siempre…'],
+  ['objetos', '🎒 Objetos', 'su coche, la taza de la suerte, el logo…'],
+];
+const TALLER = { datos: {}, sondeo: null, form: {} };
+
+function urlTaller(id, tipo, ident, extra) {
+  return `${API.presetLight(id)}/canal/${tipo}${ident ? `/${encodeURIComponent(ident)}` : ''}${extra || ''}`;
+}
+
+function cargarTallerLight(id, forzar) {
+  if (!id || (!forzar && TALLER.datos[id])) return;
+  pedir(`${API.presetLight(id)}/canal`).then(d => {
+    TALLER.datos[id] = d || {};
+    const pensando = TALLER_TIPOS.some(([t]) =>
+      Object.values((d || {})[t] || {}).some(f => f.estado === 'pensando'));
+    clearTimeout(TALLER.sondeo);
+    if (pensando) {
+      TALLER.sondeo = setTimeout(() => {
+        if (APP.light.vista === 'estilo' && APP.light.pestanaEstilo === 'taller') cargarTallerLight(id, true);
+      }, 4000);
+    }
+    if (APP.light.vista === 'estilo') pintarLight();
+  }).catch(e => { TALLER.datos[id] = { error: e.message }; });
+}
+
+function leerFotoBase64(fichero) {
+  return new Promise((ok, mal) => {
+    const lector = new FileReader();
+    lector.onload = () => ok(String(lector.result || ''));
+    lector.onerror = () => mal(new Error('no se ha podido leer la imagen'));
+    lector.readAsDataURL(fichero);
+  });
+}
+
+async function crearEnTallerLight(ficha, tipo) {
+  const f = TALLER.form[tipo] || {};
+  if (!String(f.nombre || '').trim()) { toast('ponle un nombre', true); return; }
+  try {
+    await pedir(urlTaller(ficha.id, tipo), {
+      method: 'POST', cuerpo: { nombre: f.nombre, idea: f.idea || '', foto: f.foto || '' },
+    });
+    TALLER.form[tipo] = {};
+    toast('dibujando la hoja: tarda 1-2 minutos');
+    cargarTallerLight(ficha.id, true);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function rehacerEnTallerLight(ficha, tipo, item) {
+  const nota = prompt(`¿Qué cambiarías de «${item.nombre}»? (p. ej. «más joven», «sin gafas», «la pared azul»)`, '');
+  if (nota === null) return;
+  try {
+    await pedir(urlTaller(ficha.id, tipo, item.id, '/rehacer'), { method: 'POST', cuerpo: { nota } });
+    toast('volviendo a dibujarla (~0,10 $)');
+    cargarTallerLight(ficha.id, true);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function borrarDeTallerLight(ficha, tipo, item) {
+  if (!confirm(`¿Quitar «${item.nombre}» del taller? Los vídeos ya hechos no cambian.`)) return;
+  try {
+    await pedir(urlTaller(ficha.id, tipo, item.id), { method: 'DELETE' });
+    cargarTallerLight(ficha.id, true);
+  } catch (e) { toast(e.message, true); }
+}
+
+function tarjetaTaller(ficha, tipo, item) {
+  const v = item.version || 0;
+  const cara = item.estado === 'pensando'
+    ? h('div', { clase: 'sin-cara' }, 'dibujando…')
+    : item.hay_imagen
+      ? h('img', { src: urlTaller(ficha.id, tipo, item.id, `/imagen?v=${v}`), alt: item.nombre, loading: 'lazy' })
+      : h('div', { clase: 'sin-cara' }, item.estado === 'error' ? '⚠' : '·');
+  return h('div', { clase: 'tarjeta-video taller-item' },
+    h('div', { clase: 'cara-v' }, cara,
+      h('div', { clase: 'sellos' },
+        item.estado === 'pensando' ? h('span', { clase: 'sello-v curso' }, 'Dibujando') : null,
+        item.estado === 'error' ? h('span', { clase: 'sello-v' }, 'Error') : null)),
+    h('div', { clase: 'cuerpo-v' },
+      h('div', { clase: 'nombre' }, item.nombre || item.id),
+      h('div', { clase: 'meta' }, item.papel || item.idea || ''),
+      item.estado === 'error' ? h('div', { clase: 'pista' }, item.error || '') : null),
+    h('div', { clase: 'acciones-v' },
+      h('button', {
+        clase: 'mini', disabled: item.estado === 'pensando',
+        onclick: () => rehacerEnTallerLight(ficha, tipo, item),
+      }, '↻ Rehacer'),
+      h('span', { clase: 'crece' }),
+      h('button', { clase: 'mini fantasma peligro', onclick: () => borrarDeTallerLight(ficha, tipo, item) }, 'Quitar')));
+}
+
+function formularioTaller(ficha, tipo, ejemplo) {
+  const f = TALLER.form[tipo] || (TALLER.form[tipo] = {});
+  const foto = h('input', {
+    type: 'file', accept: 'image/*',
+    onchange: async ev => {
+      const fichero = ev.target.files && ev.target.files[0];
+      if (!fichero) { f.foto = ''; return; }
+      if (fichero.size > 8 * 1024 * 1024) { toast('la imagen pesa más de 8 MB', true); ev.target.value = ''; return; }
+      try { f.foto = await leerFotoBase64(fichero); } catch (e) { toast(e.message, true); }
+    },
+  });
+  return h('div', { clase: 'taller-form' },
+    h('input', {
+      type: 'text', placeholder: 'Nombre (como lo llamará el guion)', value: f.nombre || '',
+      'data-foco': `taller-nombre-${tipo}`, oninput: ev => { f.nombre = ev.target.value; },
+    }),
+    h('textarea', {
+      rows: 2, placeholder: `Cómo es, en tus palabras: ${ejemplo}`, value: f.idea || '',
+      'data-foco': `taller-idea-${tipo}`, oninput: ev => { f.idea = ev.target.value; },
+    }),
+    h('div', { clase: 'fila' },
+      h('label', { clase: 'meta' }, 'Foto o dibujo de referencia (opcional) ', foto),
+      h('span', { clase: 'crece' }),
+      h('button', { clase: 'primario', onclick: () => crearEnTallerLight(ficha, tipo) },
+        'Crear y dibujar (~0,10 $)')));
+}
+
+function tallerDeEstilo(ficha) {
+  cargarTallerLight(ficha.id);
+  const d = TALLER.datos[ficha.id];
+  const caja = h('div', { clase: 'taller' });
+  caja.appendChild(h('div', { clase: 'caja-info' },
+    'Lo que crees aquí sale IGUAL en todos los vídeos de este estilo: cuando el guion '
+    + 'nombra a un personaje, un lugar o un objeto del taller, se usa su hoja en vez de '
+    + 'inventarlo de nuevo. Se aplica a los vídeos que generes a partir de ahora.'));
+  if (!d) { caja.appendChild(h('div', { clase: 'cargando' }, 'cargando el taller…')); return caja; }
+  if (d.error) { caja.appendChild(cajaError(d.error)); return caja; }
+  TALLER_TIPOS.forEach(([tipo, titulo, ejemplo]) => {
+    const items = Object.values(d[tipo] || {});
+    caja.appendChild(cabeceraSeccion(titulo, items.length ? `${items.length}` : 'todavía ninguno'));
+    const rejilla = h('div', { clase: 'rejilla-videos' });
+    items.forEach(item => rejilla.appendChild(tarjetaTaller(ficha, tipo, item)));
+    if (items.length) caja.appendChild(rejilla);
+    caja.appendChild(formularioTaller(ficha, tipo, ejemplo));
+  });
   return caja;
 }
 

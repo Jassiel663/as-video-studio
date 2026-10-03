@@ -1797,6 +1797,10 @@ def _assets_necesarios(plan, catalogo, params=None):
                 "tipo": "reparto", "nombre": personaje,
                 "descripcion": spec.get("descripcion", personaje),
                 "grupo": bool(spec.get("grupo")),
+                # del TALLER DEL CANAL (pasos/canal.py): su hoja ya esta
+                # dibujada y se copia en vez de pagar otra
+                "hoja_canal": spec.get("hoja_canal") or "",
+                "objeto": bool(spec.get("objeto")),
                 # lo que el revisor pidio para ESTA hoja, que tiene que entrar
                 # en su prompt (ver _texto_feedback)
                 "feedback": _texto_feedback(
@@ -2315,6 +2319,19 @@ def frase_de_referencia(indice, ref):
                       f"{ref['nombre']} from this sheet -- same face, hair, "
                       f"build and clothes -- with the same authority as any "
                       f"cast sheet, and do not keep the character it replaces.")
+    elif ref["papel"] == "reparto" and ref.get("objeto"):
+        lineas.append(f"Reference image {indice} is the reference sheet of the "
+                      f"object '{ref['nombre']}': when it appears in this shot, "
+                      f"draw that exact object -- same shape, colours and "
+                      f"details -- seen from whatever angle the shot needs. "
+                      f"Do not copy the sheet's layout or background.")
+    elif ref["papel"] == "lugar":
+        lineas.append(f"Reference image {indice} shows the recurring location "
+                      f"'{ref['nombre']}' where this shot happens: keep its "
+                      f"architecture, furniture, colours and key elements so the "
+                      f"viewer recognises the same place, but frame it as this "
+                      f"shot asks -- do not copy that image's camera angle or "
+                      f"its empty composition.")
     elif ref["papel"] == "reparto":
         # Con negativo y con prioridad, como las demas. Era el UNICO bloque de
         # referencia que decia solo que copiar y no que NO hacer: la lamina
@@ -3867,9 +3884,18 @@ def _referencias_escena(escena, plan, dirs, p, cache, hechas, anteriores=None,
             # nada, el generador tiene un motivo para destapar. Se dice.
             ficha_q = fichas_asset.get(f"asset:{personaje}") or {}
             referencias.append({"papel": "reparto", "nombre": personaje,
+                                "objeto": bool(ficha_q.get("objeto")),
                                 "tapada": tapa_la_cara(ficha_q.get("descripcion"),
                                                        ficha_q.get("feedback")),
                                 "ruta": imagen.normalizar(hoja, cache)})
+    # EL LUGAR DEL CANAL (taller): si este plano ocurre en un sitio fijo del
+    # canal, su imagen va como referencia, para que la oficina sea la misma
+    # oficina en todos los videos
+    sitio = ((p.get("catalogo") or {}).get("sets") or {}).get(escena.get("set") or "") or {}
+    if sitio.get("imagen_canal") and os.path.exists(sitio["imagen_canal"]) \
+            and not _en_otro_sitio(escena):
+        referencias.append({"papel": "lugar", "nombre": escena["set"],
+                            "ruta": imagen.normalizar(sitio["imagen_canal"], cache)})
     for real in _referencias_reales(escena, p):
         referencias.append({"papel": "parecido", "ruta": imagen.normalizar(real["ruta"], cache),
                             "que_es": real.get("que_es", ""),
@@ -4324,7 +4350,19 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_assets=False,
         avisar(0.05 + 0.25 * (indice / max(1, len(pendientes))),
                f"asset {ficha['nombre']} · {indice + 1} de {len(pendientes)}",
                (indice + 1, len(pendientes)))
-        if ficha["tipo"] == "reparto":
+        if ficha["tipo"] == "reparto" and ficha.get("hoja_canal") \
+                and os.path.exists(ficha["hoja_canal"]):
+            # UN PERSONAJE U OBJETO DEL CANAL NO SE VUELVE A DIBUJAR: su hoja
+            # es la del taller, la misma en todos los videos del estilo. Se
+            # copia (0 $) y se vuelve a copiar si en el taller se rehizo.
+            destino = os.path.join(dirs["reparto"], f"{ficha['nombre']}.png")
+            if (not os.path.exists(destino) or medios.huella_fichero(destino)
+                    != medios.huella_fichero(ficha["hoja_canal"])):
+                os.makedirs(os.path.dirname(destino), exist_ok=True)
+                medios.copiar(ficha["hoja_canal"], destino)
+            resultados[uid] = {"tipo": "reparto", "origen": "canal", "coste": 0.0,
+                               "png": os.path.relpath(destino, trabajo)}
+        elif ficha["tipo"] == "reparto":
             destino = os.path.join(dirs["reparto"], f"{ficha['nombre']}.png")
             if pedido(uid) or not os.path.exists(destino):
                 prompt = _prompt_reparto(ficha, p["estilo"])

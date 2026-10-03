@@ -2663,6 +2663,16 @@ button.enlace { background: none; border: none; padding: 0; color: var(--acento)
 .idea .material { white-space: pre-wrap; font-size: 13px; color: var(--tenue); margin-top: 6px; }
 .idea button.primario { margin-top: auto; align-self: flex-start; }
 
+/* ---- el taller del canal */
+.taller .caja-info { margin-bottom: 4px; }
+.taller-form {
+  display: flex; flex-direction: column; gap: 8px; margin: 12px 0 6px;
+  padding: 14px; border: 1px dashed var(--linea); border-radius: 14px; background: var(--panel);
+}
+.taller-form .fila { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.taller-form input[type=file] { font-size: 12px; max-width: 240px; }
+.taller-item .cara-v img { object-fit: contain; background: var(--papel); }
+
 @media (max-width: 760px) {
   .estilo-hero { grid-template-columns: 1fr; padding: 14px; }
   .estilo-hero .hero-cara { aspect-ratio: 16 / 9; }
