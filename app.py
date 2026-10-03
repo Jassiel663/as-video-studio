@@ -9484,8 +9484,11 @@ def leer_destinos_light(preset_id: str):
     if PASOS_MODULOS is None:
         raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
     datos = PASOS_MODULOS.publicar.destinos(preset_id)
+    redes = PASOS_MODULOS.redes
     datos["conexiones"] = {"youtube": PASOS_MODULOS.youtube.conexion(preset_id),
-                           "app_youtube": PASOS_MODULOS.youtube.app_lista()}
+                           "app_youtube": PASOS_MODULOS.youtube.app_lista(),
+                           **{red: redes.conexion(red, preset_id) for red in redes.REDES},
+                           **{f"app_{red}": redes.app_lista(red) for red in redes.REDES}}
     return datos
 
 
@@ -9599,7 +9602,10 @@ def _ficha_publicar(ctx):
             "short": bool(ctx.proyecto.config.get(CONFIG_SHORT) or ctx.proyecto.config.get(CONFIG_SHORT_DE)),
             "seo": pub.leer_seo(ctx.proyecto),
             "youtube": {"conexion": PASOS_MODULOS.youtube.conexion(estilo) if estilo else {},
-                        "subida": PASOS_MODULOS.youtube.leer_subida(ctx.proyecto)}}
+                        "subida": PASOS_MODULOS.youtube.leer_subida(ctx.proyecto)},
+            **{red: {"conexion": PASOS_MODULOS.redes.conexion(red, estilo) if estilo else {},
+                     "subida": PASOS_MODULOS.redes.leer_subida(ctx.proyecto, red)}
+               for red in PASOS_MODULOS.redes.REDES}}
 
 
 @app.get("/api/proyectos/{pid}/publicar")
@@ -9659,6 +9665,79 @@ def leer_preguntas(ident: str):
     if PASOS_MODULOS is None:
         raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
     return PASOS_MODULOS.preguntas.leer(ident)
+
+
+@app.get("/api/publicar/{red}/conectar")
+def conectar_red(red: str, peticion: Request, estilo: str = Query(default="")):
+    """Manda a TikTok o a Facebook para conectar la cuenta de ESTE estilo."""
+    if PASOS_MODULOS is None or red not in PASOS_MODULOS.redes.REDES:
+        raise ErrorApi(404, f"red desconocida: {red}")
+    if not estilo or not PASOS_MODULOS.presets_canal.leer(estilo):
+        raise ErrorApi(404, "ese estilo no existe")
+    try:
+        url = PASOS_MODULOS.redes.url_de_autorizacion(red, estilo, _base_publica(peticion))
+    except ValueError as fallo:
+        return HTMLResponse(_pagina_vuelta("Falta la app", str(fallo)), status_code=400)
+    return HTMLResponse("", status_code=302, headers={"Location": url})
+
+
+@app.get("/api/publicar/{red}/vuelta")
+def vuelta_red(red: str, peticion: Request, code: str = Query(default=""),
+               state: str = Query(default=""), error: str = Query(default=""),
+               error_description: str = Query(default="")):
+    if PASOS_MODULOS is None or red not in PASOS_MODULOS.redes.REDES:
+        raise ErrorApi(404, f"red desconocida: {red}")
+    nombre = {"tiktok": "TikTok", "facebook": "Facebook"}[red]
+    if error or not code:
+        return HTMLResponse(_pagina_vuelta("No se ha conectado",
+                                           f"{nombre} dice: {error_description or error or 'sin codigo'}."))
+    try:
+        ficha = PASOS_MODULOS.redes.completar(red, code, state, _base_publica(peticion))
+    except Exception as fallo:                              # noqa: BLE001
+        return HTMLResponse(_pagina_vuelta("No se ha conectado", str(fallo)))
+    return HTMLResponse(_pagina_vuelta(
+        f"{nombre} conectado",
+        f"La cuenta «{ficha.get('cuenta') or 'conectada'}» queda conectada a este estilo."
+        + (" Elige en Publicar en que pagina se publica." if red == "facebook" else "")))
+
+
+@app.delete("/api/presets-light/{preset_id}/conexion/{red}")
+def desconectar_red(preset_id: str, red: str):
+    if PASOS_MODULOS is None or red not in PASOS_MODULOS.redes.REDES:
+        raise ErrorApi(404, f"red desconocida: {red}")
+    PASOS_MODULOS.redes.desconectar(red, preset_id)
+    return {"desconectado": red}
+
+
+@app.put("/api/presets-light/{preset_id}/conexion/facebook/pagina")
+def elegir_pagina_facebook(preset_id: str, cuerpo: dict = Body(default=None)):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    try:
+        return PASOS_MODULOS.redes.elegir_pagina(preset_id, str(_cuerpo(cuerpo).get("pagina") or ""))
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.post("/api/proyectos/{pid}/publicar/{red}")
+def subir_a_red(pid: str, red: str, cuerpo: dict = Body(default=None)):
+    """Sube el video a la cuenta de TikTok o Facebook de su estilo."""
+    if PASOS_MODULOS is None or red not in PASOS_MODULOS.redes.REDES:
+        raise ErrorApi(404, f"red desconocida: {red}")
+    ctx = contexto(pid)
+    datos = _cuerpo(cuerpo)
+    ficha = _ficha_publicar(ctx)
+    seo = ficha.get("seo") or {}
+    titulo = ((seo.get("youtube") or {}).get("titulo")) or ctx.proyecto.config.get("nombre", pid)
+    texto = datos.get("texto") or (seo.get(red) or {}).get("texto") or titulo
+    try:
+        return PASOS_MODULOS.redes.subir(
+            red, ctx.proyecto, ficha["estilo"],
+            os.path.join(ctx.proyecto.raiz, ficha["mp4"]) if ficha["mp4"] else "",
+            titulo, texto, modo=str(datos.get("modo") or "borrador"),
+            publicar_en=str(datos.get("publicar_en") or ""))
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
 
 
 @app.get("/api/nichos")

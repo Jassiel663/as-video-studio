@@ -522,6 +522,22 @@ def cuentas_de_estilo(argumentos):
         codigo, datos = _llamar("GET", f"/api/presets-light/{_q(estilo)}/publicar")
     return _error_de(codigo, datos) if codigo != 200 else _json(datos)
 
+
+def subir_video(argumentos):
+    """Sube un video a la cuenta de YouTube/TikTok/Facebook de su estilo.
+    Publicar es hacia fuera: sin confirmado=true no hace nada."""
+    pid = _pid(argumentos)
+    red = str(argumentos.get("red") or "").strip().lower()
+    if red not in ("youtube", "tiktok", "facebook"):
+        return "red tiene que ser youtube, tiktok o facebook"
+    if not argumentos.get("confirmado"):
+        return (f"NECESITA CONFIRMACION: vas a publicar el video {pid} en {red}. Dile a la "
+                f"persona en que cuenta y con que privacidad, y SOLO si dice que si vuelve a "
+                f"llamar con confirmado=true.")
+    cuerpo = {k: argumentos[k] for k in ("privacidad", "modo", "publicar_en") if argumentos.get(k)}
+    codigo, datos = _llamar("POST", f"/api/proyectos/{_q(pid)}/publicar/{red}", cuerpo)
+    return _error_de(codigo, datos) if codigo != 200 else f"enviando a {red}: se ve el progreso en Publicar del video."
+
 _TXT = {"type": "string"}
 _NUM = {"type": "number"}
 _CONF = {"type": "number", "description": "SOLO tras un si explicito de la persona: el coste que aceptó"}
@@ -572,6 +588,12 @@ HERRAMIENTAS.update({
     "cuentas_de_estilo": (cuentas_de_estilo,
         "Lee o guarda los enlaces de las cuentas donde publica un estilo (youtube, tiktok, facebook, instagram).",
         {"estilo": _TXT, "youtube": _TXT, "tiktok": _TXT, "facebook": _TXT, "instagram": _TXT}),
+    "subir_video": (subir_video,
+        "Sube un video montado a la cuenta conectada de su estilo en youtube (privacidad "
+        "private|unlisted|public, publicar_en ISO opcional), tiktok (modo borrador|directo) o "
+        "facebook (publicar_en opcional). Pide confirmacion antes.",
+        {"proyecto": _TXT, "red": _TXT, "privacidad": _TXT, "modo": _TXT, "publicar_en": _TXT,
+         "confirmado": {"type": "boolean"}}),
     "taller": (taller, "Crea un personaje/lugar/objeto fijo de un estilo (de pago, pide confirmacion).",
         {"estilo": _TXT, "tipo": _TXT, "nombre": _TXT, "idea": _TXT, "confirmo_coste": _CONF}),
 })

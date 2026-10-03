@@ -2999,6 +2999,16 @@ function seccionOtrasClaves(ficha) {
     + location.origin + '/api/publicar/youtube/vuelta'));
   fila(['youtube_id', 'YouTube — ID de cliente', 'el «ID de cliente» de la app de Google (termina en .apps.googleusercontent.com)']);
   fila(['youtube_secreto', 'YouTube — secreto de cliente', 'el «Secreto de cliente» de esa misma app']);
+  caja.appendChild(h('div', { clase: 'pista' },
+    'TikTok: app en developers.tiktok.com con Login Kit y Content Posting API; dirección de vuelta '
+    + location.origin + '/api/publicar/tiktok/vuelta'));
+  fila(['tiktok_id', 'TikTok — Client key', 'la «Client key» de tu app de TikTok']);
+  fila(['tiktok_secreto', 'TikTok — Client secret', 'el «Client secret» de esa app']);
+  caja.appendChild(h('div', { clase: 'pista' },
+    'Facebook: app en developers.facebook.com (Inicio de sesión con Facebook); URI de redirección '
+    + location.origin + '/api/publicar/facebook/vuelta'));
+  fila(['facebook_id', 'Facebook — App ID', 'el «Identificador de la app» de Meta']);
+  fila(['facebook_secreto', 'Facebook — Clave secreta', 'la «Clave secreta de la app» de Meta']);
   return caja;
 }
 
@@ -10797,13 +10807,44 @@ function conexionesDeEstilo(ficha) {
     onclick: ev => { if (!con.app_youtube) { ev.preventDefault(); conmutarConfig(); } },
   }, yt.canal ? 'Cambiar de canal' : 'Conectar YouTube'));
   caja.appendChild(filaYt);
-  [['tiktok', 'TikTok', '♪'], ['facebook', 'Facebook', 'f']].forEach(([id, nombre, ico]) =>
-    caja.appendChild(h('div', { clase: 'fila conexion' },
+  [['tiktok', 'TikTok', '♪'], ['facebook', 'Facebook', 'f']].forEach(([id, nombre, ico]) => {
+    const c = con[id] || {};
+    const hayApp = con[`app_${id}`];
+    const filaRed = h('div', { clase: 'fila conexion' },
       h('span', { clase: `ico-pub ${id}` }, ico), h('b', {}, nombre),
-      h('span', { clase: 'crece meta' }, 'próximamente: se conectará igual, cada estilo con su cuenta'))));
+      h('span', { clase: 'crece meta' }, c.cuenta ? `conectado: «${c.cuenta}»`
+        : hayApp ? 'sin conectar' : `falta la app de ${nombre} en Configuración › Claves › Publicar`));
+    if (id === 'facebook' && (c.paginas || []).length) {
+      filaRed.appendChild(h('select', {
+        title: 'La página donde se publica',
+        onchange: async ev => {
+          try {
+            await pedir(`${API.presetLight(ficha.id)}/conexion/facebook/pagina`, { method: 'PUT', cuerpo: { pagina: ev.target.value } });
+            toast('página elegida');
+          } catch (e) { toast(e.message, true); }
+        }, value: c.pagina || '',
+      }, c.paginas.map(pg => h('option', { value: pg.id }, pg.nombre || pg.id))));
+    }
+    if (c.cuenta) {
+      filaRed.appendChild(h('button', {
+        clase: 'mini fantasma peligro', onclick: async () => {
+          if (!confirm(`¿Desconectar ${nombre} de este estilo?`)) return;
+          await pedir(`${API.presetLight(ficha.id)}/conexion/${id}`, { method: 'DELETE' });
+          DESTINOS.datos[ficha.id] = null; cargarDestinosLight(ficha.id, true);
+        },
+      }, 'Desconectar'));
+    }
+    filaRed.appendChild(h('a', {
+      clase: 'boton mini primario' + (hayApp ? '' : ' apagado'),
+      href: hayApp ? `${BASE}/api/publicar/${id}/conectar?estilo=${encodeURIComponent(ficha.id)}` : '#',
+      onclick: ev => { if (!hayApp) { ev.preventDefault(); conmutarConfig(); } },
+    }, c.cuenta ? 'Cambiar de cuenta' : `Conectar ${nombre}`));
+    caja.appendChild(filaRed);
+  });
   caja.appendChild(h('div', { clase: 'pista' },
-    'Al conectar entras con la cuenta de Google de ESE canal. Mientras Google no revise la app, '
-    + 'los vídeos subidos así quedan en privado.'));
+    'Al conectar entras con la cuenta de ESE canal. YouTube y TikTok publican en privado hasta que '
+    + 'revisen tu app; en TikTok, «Enviar a borradores» funciona ya: lo publicas desde la app del móvil. '
+    + 'En Facebook, en modo desarrollo, cada amigo tiene que estar añadido como evaluador de la app.'));
   return caja;
 }
 
@@ -10815,7 +10856,8 @@ function cargarPublicarLight(pid, forzar) {
   pedir(`${API.proyecto(pid)}/publicar`).then(d => {
     PUB_VIDEO.datos[pid] = d || {};
     clearTimeout(PUB_VIDEO.sondeo);
-    if (((d || {}).seo || {}).estado === 'pensando' || (((d || {}).youtube || {}).subida || {}).estado === 'subiendo') {
+    if (((d || {}).seo || {}).estado === 'pensando'
+        || ['youtube', 'tiktok', 'facebook'].some(red => ((((d || {})[red] || {}).subida) || {}).estado === 'subiendo')) {
       PUB_VIDEO.sondeo = setTimeout(() => { if (videoAbierto().pid === pid) cargarPublicarLight(pid, true); }, 4000);
     }
     refrescarVivosLight();
@@ -10889,6 +10931,53 @@ function subidaYoutube(v, d) {
   return caja;
 }
 
+function subidaRed(v, d, red) {
+  const info = d[red] || {};
+  const sub = info.subida || {};
+  const nombre = red === 'tiktok' ? 'TikTok' : 'Facebook';
+  const cuenta = (info.conexion || {}).cuenta;
+  if (!cuenta) return h('small', { clase: 'meta' }, `Para subir solo, conecta ${nombre} en Publicar (menú) con este estilo.`);
+  const clave = `${v.pid}:${red}`;
+  const o = PUB_VIDEO.opciones[clave] || (PUB_VIDEO.opciones[clave] = { modo: 'borrador', cuando: '' });
+  const caja = h('div', { clase: 'subida-yt' });
+  if (sub.estado === 'subiendo') {
+    const pct = Math.round((Number(sub.progreso) || 0) * 100);
+    caja.appendChild(h('small', {}, `Subiendo a «${cuenta}»… ${pct} %`));
+    caja.appendChild(h('div', { clase: 'barra-mind' }, h('span', { estilo: `width:${pct}%` })));
+    return caja;
+  }
+  if (sub.estado === 'listo') {
+    caja.appendChild(h('div', { clase: 'caja-info' }, '✅ Enviado ',
+      sub.url ? h('a', { href: sub.url, target: '_blank', rel: 'noopener' }, '· verlo') : null,
+      sub.aviso ? h('div', { clase: 'meta' }, sub.aviso) : null));
+  }
+  if (sub.estado === 'error') caja.appendChild(cajaError(sub.error || 'no se ha podido subir'));
+  const mandos = h('div', { clase: 'fila' });
+  if (red === 'tiktok') {
+    mandos.appendChild(h('select', { onchange: ev => { o.modo = ev.target.value; }, value: o.modo },
+      [['borrador', 'Enviar a borradores (lo publicas en la app)'], ['directo', 'Publicar directo']]
+        .map(([x, t]) => h('option', { value: x }, t))));
+  } else {
+    mandos.appendChild(h('input', { type: 'datetime-local', value: o.cuando, title: 'Opcional: programar',
+      oninput: ev => { o.cuando = ev.target.value; } }));
+  }
+  mandos.appendChild(h('span', { clase: 'crece' }));
+  mandos.appendChild(h('button', {
+    clase: 'primario mini', disabled: !d.mp4,
+    onclick: async () => {
+      if (!confirm(`¿Enviar este vídeo a ${nombre} («${cuenta}»)?`)) return;
+      try {
+        await pedir(`${API.proyecto(v.pid)}/publicar/${red}`, { method: 'POST', cuerpo: {
+          modo: o.modo, publicar_en: o.cuando ? new Date(o.cuando).toISOString() : '' } });
+        toast(`enviando a ${nombre}…`);
+        cargarPublicarLight(v.pid, true);
+      } catch (e) { toast(e.message, true); }
+    },
+  }, `⬆ Enviar a «${cuenta}»`));
+  caja.appendChild(mandos);
+  return caja;
+}
+
 function bloquePublicarLight() {
   const v = videoAbierto();
   if (!v.pid || !v.guion) return null;
@@ -10934,6 +11023,7 @@ function bloquePublicarLight() {
     }
     if (!s.titulo && !s.texto) poner(h('small', { clase: 'meta' }, 'Pulsa «Escribir textos SEO» arriba.'));
     if (pl === 'youtube') poner(subidaYoutube(v, d));
+    if (pl === 'tiktok' || pl === 'facebook') poner(subidaRed(v, d, pl));
     const nombreFich = `${(v.nombre || 'video').replace(/[^\wáéíóúñ -]/gi, '').slice(0, 60)}.mp4`;
     tarjeta.appendChild(h('div', { clase: 'fila acciones-pub' },
       d.mp4 ? h('a', { clase: 'boton mini', href: API.archivo(v.pid, d.mp4), download: nombreFich }, '⬇ Vídeo') : null,
