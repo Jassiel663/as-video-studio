@@ -496,6 +496,29 @@ def taller(argumentos):
     return _error_de(codigo, datos) if codigo != 200 else "en marcha: sale en la pestaña Taller del estilo."
 
 
+
+def publicar(argumentos):
+    """El kit para publicar un video: escribe el SEO (gratis) o lo lee."""
+    pid = _pid(argumentos)
+    if argumentos.get("escribir"):
+        codigo, datos = _llamar("POST", f"/api/proyectos/{_q(pid)}/publicar/seo", {})
+    else:
+        codigo, datos = _llamar("GET", f"/api/proyectos/{_q(pid)}/publicar")
+    if codigo != 200:
+        return _error_de(codigo, datos)
+    return _json({k: datos.get(k) for k in ("destinos", "subida", "mp4", "seo")})
+
+
+def cuentas_de_estilo(argumentos):
+    """Lee o guarda las cuentas (youtube, tiktok, facebook, instagram) de un estilo."""
+    estilo = str(argumentos.get("estilo") or "").strip()
+    cambios = {k: argumentos[k] for k in ("youtube", "tiktok", "facebook", "instagram") if k in argumentos}
+    if cambios:
+        codigo, datos = _llamar("PUT", f"/api/presets-light/{_q(estilo)}/publicar", cambios)
+    else:
+        codigo, datos = _llamar("GET", f"/api/presets-light/{_q(estilo)}/publicar")
+    return _error_de(codigo, datos) if codigo != 200 else _json(datos)
+
 _TXT = {"type": "string"}
 _NUM = {"type": "number"}
 _CONF = {"type": "number", "description": "SOLO tras un si explicito de la persona: el coste que aceptó"}
@@ -538,6 +561,13 @@ HERRAMIENTAS.update({
         {"proyecto": _TXT, "duracion_s": _NUM}),
     "miniaturas": (miniaturas, "Tres miniaturas de YouTube para un video (de pago, pide confirmacion).",
         {"proyecto": _TXT, "indicaciones": _TXT, "confirmo_coste": _CONF}),
+    "publicar": (publicar,
+        "Kit para publicar un video: con escribir=true redacta titulo, descripcion con capitulos, "
+        "etiquetas y textos de TikTok/Facebook/Instagram (gratis); sin el, lo lee con las paginas de subida.",
+        {"proyecto": _TXT, "escribir": {"type": "boolean"}}),
+    "cuentas_de_estilo": (cuentas_de_estilo,
+        "Lee o guarda los enlaces de las cuentas donde publica un estilo (youtube, tiktok, facebook, instagram).",
+        {"estilo": _TXT, "youtube": _TXT, "tiktok": _TXT, "facebook": _TXT, "instagram": _TXT}),
     "taller": (taller, "Crea un personaje/lugar/objeto fijo de un estilo (de pago, pide confirmacion).",
         {"estilo": _TXT, "tipo": _TXT, "nombre": _TXT, "idea": _TXT, "confirmo_coste": _CONF}),
 })

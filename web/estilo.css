@@ -2965,6 +2965,38 @@ body:has(.nav-light) .burbuja-asistente { bottom: calc(var(--alto-nav) + 14px + 
   .mind-hero h1 { font-size: 26px; }
 }
 
+/* ---- publicar */
+.campo-pub { display: grid; grid-template-columns: 30px 90px minmax(0, 1fr); align-items: center; gap: 10px; }
+.ico-pub {
+  width: 28px !important; min-width: 28px; max-width: 28px; height: 28px; padding: 0; border-radius: 8px; display: inline-flex; align-items: center;
+  justify-content: center; font-weight: 800; font-size: 13px; color: var(--blanco); background: var(--hueco);
+  border: 1px solid var(--linea); flex: 0 0 auto;
+}
+.rejilla-pub { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); margin-top: 12px; }
+.tarjeta-pub {
+  display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 14px;
+  background: var(--hueco); border: 1px solid var(--linea);
+}
+.tarjeta-pub .fila, .copiable .fila { display: flex; align-items: center; gap: 8px; }
+.copiable small { color: var(--tenue); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.copiable pre, .copiable-texto {
+  margin: 6px 0 0; white-space: pre-wrap; font: inherit; font-size: 13px; line-height: 1.5;
+  max-height: 180px; overflow: auto; padding: 10px; border-radius: 10px; background: var(--panel);
+  border: 1px solid var(--linea-suave);
+}
+a.boton {
+  display: inline-flex; align-items: center; gap: 6px; text-decoration: none; cursor: pointer;
+  color: var(--texto); background: var(--boton); border: 1px solid var(--linea);
+  border-radius: 7px; padding: 6px 10px;
+}
+a.boton.mini { padding: 3px 9px; font-size: 12px; border-radius: 6px; }
+a.boton:hover { border-color: var(--acento); }
+a.boton.primario {
+  background: linear-gradient(135deg, var(--acento), var(--acento2)); color: var(--blanco);
+  border-color: transparent; text-decoration: none;
+}
+.acciones-pub { margin-top: auto; flex-wrap: wrap; }
+
 /* ---- movil: el menu es un cajon */
 @media (max-width: 960px) {
   body { padding-left: 0; }

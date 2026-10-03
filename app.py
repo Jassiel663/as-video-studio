@@ -9454,6 +9454,69 @@ def imagen_de_canal_light(preset_id: str, tipo: str, ident: str, foto: int = 0):
     return FileResponse(ruta, headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/api/presets-light/{preset_id}/publicar")
+def leer_destinos_light(preset_id: str):
+    """Donde se publica este estilo: sus cuentas de YouTube, TikTok, Facebook e Instagram."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return PASOS_MODULOS.publicar.destinos(preset_id)
+
+
+@app.put("/api/presets-light/{preset_id}/publicar")
+def guardar_destinos_light(preset_id: str, cuerpo: dict = Body(default=None)):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return PASOS_MODULOS.publicar.guardar_destinos(preset_id, _cuerpo(cuerpo))
+
+
+def _ficha_publicar(ctx):
+    """Lo que necesita la pantalla para publicar un video."""
+    pub = PASOS_MODULOS.publicar
+    estilo = ctx.proyecto.config.get(CONFIG_ESTILO_LIGHT) or ""
+    destinos = pub.destinos(estilo) if estilo else {p: "" for p in pub.PLATAFORMAS}
+    mp4 = sorted(glob.glob(os.path.join(ctx.proyecto.raiz, "pasos", "render", "v*", "video.mp4")))
+    minis = sorted(glob.glob(os.path.join(ctx.proyecto.raiz, "miniaturas", "miniatura_*.png")))
+    rel = lambda r: os.path.relpath(r, ctx.proyecto.raiz).replace(os.sep, "/")
+    return {"estilo": estilo, "destinos": destinos,
+            "subida": {p: pub.pagina_de_subida(p, destinos.get(p)) for p in pub.PLATAFORMAS},
+            "mp4": rel(mp4[-1]) if mp4 else "",
+            "miniaturas": [rel(m) for m in minis],
+            "short": bool(ctx.proyecto.config.get(CONFIG_SHORT) or ctx.proyecto.config.get(CONFIG_SHORT_DE)),
+            "seo": pub.leer_seo(ctx.proyecto)}
+
+
+@app.get("/api/proyectos/{pid}/publicar")
+def leer_publicar(pid: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return _ficha_publicar(contexto(pid))
+
+
+@app.post("/api/proyectos/{pid}/publicar/seo")
+def generar_seo(pid: str):
+    """Titulo, descripcion con capitulos, etiquetas y textos para cada red. Gratis."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    ctx = contexto(pid)
+    plan = PASOS_MODULOS.comun.leer_salida(ctx.proyecto, "assets", "plan.json",
+                                           obligatorio=False) or {}
+    escenas = plan.get("escenas") or []
+    if not escenas:
+        bloques = _bloques_del_guion(ctx)
+        escenas = [{"t_in": 0, "narracion": b["texto"]} for b in bloques]
+    if not escenas:
+        raise ErrorApi(400, "este video todavia no tiene guion")
+    guion = ctx.estado.params("guion") or {}
+    ficha = _ficha_publicar(ctx)
+    estilo = PASOS_MODULOS.presets_canal.leer(ficha["estilo"]) if ficha["estilo"] else None
+    PASOS_MODULOS.publicar.generar_seo(
+        ctx.proyecto, ctx.proyecto.config.get("nombre", ctx.id), escenas,
+        idioma=guion.get("idioma_salida") or "es",
+        tipo="short" if ficha["short"] else ("documental" if ctx.proyecto.config.get(CONFIG_DOCUMENTAL) else "video"),
+        canal=(estilo or {}).get("nombre", ""))
+    return _ficha_publicar(ctx)
+
+
 @app.get("/api/nichos")
 def listar_nichos():
     """Los estudios de nicho desde cero (pasos/nicho.py)."""

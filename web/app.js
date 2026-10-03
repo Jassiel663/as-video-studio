@@ -6269,7 +6269,7 @@ function prepararShortDe(video, modo) {
  */
 const PESTANAS_ESTILO = [
   ['videos', 'Vídeos'], ['documentales', 'Documentales'], ['shorts', 'Shorts'],
-  ['taller', '🎭 Taller'],
+  ['taller', '🎭 Taller'], ['publicacion', '📣 Publicación'],
 ];
 
 function heroEstilo(ficha, extra) {
@@ -6344,6 +6344,8 @@ function vistaEstiloLight() {
     caja.appendChild(shortsDeEstilo(ficha, suyos));
   } else if (l.pestanaEstilo === 'taller') {
     caja.appendChild(tallerDeEstilo(ficha));
+  } else if (l.pestanaEstilo === 'publicacion') {
+    caja.appendChild(publicacionDeEstilo(ficha));
   } else {
     const doc = l.pestanaEstilo === 'documentales';
     const lista = suyos.filter(v => !esShortVideo(v) && !!v.documental === doc);
@@ -10438,6 +10440,166 @@ function bloqueMiniaturasLight() {
   return caja;
 }
 
+
+/* ========================================================== PUBLICAR
+ *
+ * Cada estilo publica en SUS cuentas (pestaña «Publicación» del estilo), y cada
+ * vídeo trae su kit SEO por plataforma con lo necesario para subirlo en un
+ * minuto: descargar, copiar y abrir la subida de esa cuenta (pasos/publicar.py).
+ */
+const PLATAFORMAS_PUB = [
+  ['youtube', 'YouTube', '▶', 'https://www.youtube.com/@tucanal'],
+  ['tiktok', 'TikTok', '♪', 'https://www.tiktok.com/@tucuenta'],
+  ['facebook', 'Facebook', 'f', 'https://www.facebook.com/tupagina'],
+  ['instagram', 'Instagram', '◎', 'https://www.instagram.com/tucuenta'],
+];
+const DESTINOS = { datos: {}, editando: {} };
+
+function cargarDestinosLight(id, forzar) {
+  if (!id || (!forzar && DESTINOS.datos[id])) return;
+  pedir(`${API.presetLight(id)}/publicar`).then(d => {
+    DESTINOS.datos[id] = d || {};
+    DESTINOS.editando[id] = Object.assign({}, d || {});
+    if (APP.light.vista === 'estilo') pintarLight();
+  }).catch(() => { DESTINOS.datos[id] = {}; });
+}
+
+function publicacionDeEstilo(ficha) {
+  cargarDestinosLight(ficha.id);
+  const ed = DESTINOS.editando[ficha.id];
+  const caja = h('div', { clase: 'taller' });
+  caja.appendChild(h('div', { clase: 'caja-info' },
+    'Las cuentas donde se publica ESTE estilo. Cada vídeo suyo tendrá un botón para '
+    + 'subirlo a estas cuentas con el título, la descripción y las etiquetas ya escritos. '
+    + 'Deja vacías las que no uses.'));
+  if (!ed) { caja.appendChild(h('div', { clase: 'cargando' }, 'cargando…')); return caja; }
+  const form = h('section', { clase: 'bloque-shorts form-nicho' });
+  PLATAFORMAS_PUB.forEach(([id, nombre, ico, ejemplo]) => form.appendChild(h('label', { clase: 'campo-pub' },
+    h('span', { clase: `ico-pub ${id}` }, ico),
+    h('b', {}, nombre),
+    h('input', {
+      type: 'url', 'data-foco': `pub-${id}`, placeholder: ejemplo, value: ed[id] || '',
+      oninput: ev => { ed[id] = ev.target.value; },
+    }))));
+  form.appendChild(h('div', { clase: 'fila' }, h('span', { clase: 'crece' }),
+    h('button', {
+      clase: 'primario', onclick: async () => {
+        try {
+          DESTINOS.datos[ficha.id] = await pedir(`${API.presetLight(ficha.id)}/publicar`, { method: 'PUT', cuerpo: ed });
+          DESTINOS.editando[ficha.id] = Object.assign({}, DESTINOS.datos[ficha.id]);
+          toast('cuentas guardadas');
+          pintarLight();
+        } catch (e) { toast(e.message, true); }
+      },
+    }, 'Guardar cuentas')));
+  caja.appendChild(form);
+  caja.appendChild(h('div', { clase: 'pista' },
+    'Pronto: «Conectar» cada cuenta para que el estudio suba y programe solo. YouTube y TikTok '
+    + 'necesitan que registres una app una vez (Mind te guía).'));
+  return caja;
+}
+
+/* ---------------------------------------------- el bloque del vídeo */
+const PUB_VIDEO = { datos: {}, sondeo: null };
+
+function cargarPublicarLight(pid, forzar) {
+  if (!pid || (!forzar && PUB_VIDEO.datos[pid])) return;
+  pedir(`${API.proyecto(pid)}/publicar`).then(d => {
+    PUB_VIDEO.datos[pid] = d || {};
+    clearTimeout(PUB_VIDEO.sondeo);
+    if (((d || {}).seo || {}).estado === 'pensando') {
+      PUB_VIDEO.sondeo = setTimeout(() => { if (videoAbierto().pid === pid) cargarPublicarLight(pid, true); }, 4000);
+    }
+    refrescarVivosLight();
+  }).catch(() => { PUB_VIDEO.datos[pid] = {}; });
+}
+
+function copiarTexto(texto, que) {
+  const ok = () => toast(`${que} copiado`);
+  try {
+    navigator.clipboard.writeText(String(texto || '')).then(ok, () => fallbackCopiar(texto, ok));
+  } catch (e) { fallbackCopiar(texto, ok); }
+}
+
+function fallbackCopiar(texto, ok) {
+  const area = h('textarea', {});
+  area.value = String(texto || '');
+  document.body.appendChild(area);
+  area.select();
+  try { document.execCommand('copy'); ok(); } catch (e) { toast('no se ha podido copiar', true); }
+  area.remove();
+}
+
+function campoCopiable(etiqueta, texto, filas) {
+  if (!texto) return null;
+  return h('div', { clase: 'copiable' },
+    h('div', { clase: 'fila' }, h('small', {}, etiqueta), h('span', { clase: 'crece' }),
+      h('button', { clase: 'mini', onclick: () => copiarTexto(texto, etiqueta) }, '⧉ Copiar')),
+    filas ? h('pre', {}, texto) : h('div', { clase: 'copiable-texto' }, texto));
+}
+
+function bloquePublicarLight() {
+  const v = videoAbierto();
+  if (!v.pid || !v.guion) return null;
+  cargarPublicarLight(v.pid);
+  const d = PUB_VIDEO.datos[v.pid] || {};
+  const seo = d.seo || {};
+  const pensando = seo.estado === 'pensando';
+  const caja = h('section', { clase: 'bloque-shorts publicar' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, '📣 Publicar'),
+      h('span', { clase: 'meta' }, 'títulos, descripción y etiquetas listos, y la subida a las cuentas de este estilo')));
+  caja.appendChild(h('div', { clase: 'fila' },
+    h('span', { clase: 'crece meta' }, d.mp4 ? '' : 'Todavía no hay MP4: los textos se pueden preparar ya.'),
+    h('button', {
+      clase: 'primario', disabled: pensando,
+      onclick: async () => {
+        try {
+          PUB_VIDEO.datos[v.pid] = await pedir(`${API.proyecto(v.pid)}/publicar/seo`, { method: 'POST' });
+          toast('escribiendo los textos: medio minuto');
+          cargarPublicarLight(v.pid, true);
+        } catch (e) { toast(e.message, true); }
+      },
+    }, pensando ? 'escribiendo…' : (seo.youtube ? '↻ Reescribir textos (gratis)' : '✍ Escribir textos SEO (gratis)'))));
+  if (seo.estado === 'error' && seo.error) caja.appendChild(cajaError(seo.error));
+  const orden = d.short ? ['tiktok', 'instagram', 'youtube', 'facebook'] : ['youtube', 'facebook', 'tiktok', 'instagram'];
+  const destinos = d.destinos || {};
+  const rejilla = h('div', { clase: 'rejilla-pub' });
+  orden.forEach(pl => {
+    const info = PLATAFORMAS_PUB.find(x => x[0] === pl);
+    const s = seo[pl] || {};
+    const tarjeta = h('article', { clase: 'tarjeta-pub' },
+      h('div', { clase: 'fila' }, h('span', { clase: `ico-pub ${pl}` }, info[2]), h('b', {}, info[1]),
+        h('span', { clase: 'crece' }),
+        destinos[pl] ? h('a', { href: destinos[pl], target: '_blank', rel: 'noopener', clase: 'meta' }, 'la cuenta ↗')
+          : h('small', { clase: 'meta' }, 'sin cuenta en este estilo')));
+    const poner = nodo => { if (nodo) tarjeta.appendChild(nodo); };
+    if (pl === 'youtube') {
+      poner(campoCopiable('Título', s.titulo));
+      if ((s.alternativas || []).length) poner(h('small', { clase: 'meta' }, 'Otros: ' + s.alternativas.join(' · ')));
+      poner(campoCopiable('Descripción', s.descripcion, true));
+      poner(campoCopiable('Etiquetas', (s.etiquetas || []).join(', ')));
+    } else {
+      poner(campoCopiable('Texto', s.texto, true));
+    }
+    if (!s.titulo && !s.texto) poner(h('small', { clase: 'meta' }, 'Pulsa «Escribir textos SEO» arriba.'));
+    const nombreFich = `${(v.nombre || 'video').replace(/[^\wáéíóúñ -]/gi, '').slice(0, 60)}.mp4`;
+    tarjeta.appendChild(h('div', { clase: 'fila acciones-pub' },
+      d.mp4 ? h('a', { clase: 'boton mini', href: API.archivo(v.pid, d.mp4), download: nombreFich }, '⬇ Vídeo') : null,
+      pl === 'youtube' && (d.miniaturas || []).length
+        ? h('a', { clase: 'boton mini', href: API.archivo(v.pid, d.miniaturas[0]), download: 'miniatura.png' }, '⬇ Miniatura') : null,
+      h('span', { clase: 'crece' }),
+      h('a', { clase: 'boton mini primario', href: (d.subida || {})[pl] || '#', target: '_blank', rel: 'noopener' },
+        `Subir a ${info[1]} ↗`)));
+    rejilla.appendChild(tarjeta);
+  });
+  caja.appendChild(rejilla);
+  if (!Object.values(destinos).some(Boolean)) {
+    caja.appendChild(h('div', { clase: 'pista' },
+      'Consejo: pon las cuentas de este estilo en su pestaña «📣 Publicación» y el botón abrirá la cuenta correcta.'));
+  }
+  return caja;
+}
+
 function vistaVideoLight() {
   const v = videoAbierto();
   const caja = h('div', { clase: 'light-video' });
@@ -10473,6 +10635,7 @@ function vistaVideoLight() {
   caja.appendChild(marco);
   caja.appendChild(enVivo(filaVideoIaLight));
   caja.appendChild(enVivo(bloqueMiniaturasLight));
+  caja.appendChild(enVivo(bloquePublicarLight));
 
   /* LA TIRA DE VINETAS SOLO MIENTRAS SE GENERA.
      Con el video ya montado esta pantalla es para VERLO y comentarlo, y
