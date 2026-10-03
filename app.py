@@ -9454,6 +9454,52 @@ def imagen_de_canal_light(preset_id: str, tipo: str, ident: str, foto: int = 0):
     return FileResponse(ruta, headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/api/nichos")
+def listar_nichos():
+    """Los estudios de nicho desde cero (pasos/nicho.py)."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return {"nichos": PASOS_MODULOS.nicho.listar()}
+
+
+@app.post("/api/nichos")
+def estudiar_nicho(cuerpo: dict = Body(default=None)):
+    """Estudia un nicho desde cero: demanda, competencia, dinero, subnichos y un
+    canal propuesto con sus 10 primeros videos. Gratis (suscripcion)."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = _cuerpo(cuerpo)
+    referencias = datos.get("referencias") or []
+    if isinstance(referencias, str):
+        referencias = re.split(r"[\n,;]+", referencias)
+    try:
+        return PASOS_MODULOS.nicho.estudiar(datos.get("tema"), datos.get("idioma") or "es",
+                                            datos.get("notas") or "", referencias)
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.get("/api/nichos/{ident}")
+def leer_nicho(ident: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = PASOS_MODULOS.nicho.leer(ident)
+    if not datos:
+        raise ErrorApi(404, f"no hay ningun estudio '{ident}'")
+    return datos
+
+
+@app.delete("/api/nichos/{ident}")
+def borrar_nicho(ident: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    try:
+        PASOS_MODULOS.nicho.borrar(ident)
+    except ValueError as fallo:
+        raise ErrorApi(404, str(fallo))
+    return {"borrado": ident}
+
+
 @app.get("/api/presets-light/{preset_id}/ideas")
 def leer_ideas_light(preset_id: str):
     """Lo ultimo que se estudio del nicho de este estilo (pasos/ideas.py)."""

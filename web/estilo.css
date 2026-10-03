@@ -2931,6 +2931,40 @@ button.blanco:hover:not(:disabled) { filter: brightness(.92); border-color: var(
 .burbuja-asistente:hover:not(:disabled) { border: 1px solid var(--acento); filter: none; background: var(--hueco); }
 body:has(.nav-light) .burbuja-asistente { bottom: calc(var(--alto-nav) + 14px + env(safe-area-inset-bottom, 0px)); }
 
+/* ---- Mind */
+.mind-hero {
+  display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 26px; align-items: start;
+  padding: 26px; border-radius: 18px; margin: 4px 0 14px; border: 1px solid var(--acento-borde);
+  background: radial-gradient(120% 160% at 0% 0%, var(--marcado), var(--panel) 60%);
+}
+.mind-hero-logo svg { width: 120px; height: 120px; display: block; }
+.mind-hero h1 { font-size: 34px; font-weight: 800; letter-spacing: -.035em; }
+.mind-hero p { margin: 8px 0 14px; max-width: 70ch; }
+.mind-hero textarea { font-size: 15px; padding: 12px 14px; border-radius: 12px; }
+.mind-hero .fila { display: flex; margin-top: 10px; }
+.chips-mind { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.chips-mind button { border-radius: 999px; padding: 6px 12px; background: var(--panel); }
+.form-nicho { display: flex; flex-direction: column; gap: 10px; }
+.form-nicho .fila { display: flex; align-items: center; gap: 10px; }
+.nota-nicho {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 0 0 auto !important;
+  width: 96px; height: 96px; border-radius: 18px; border: 1px solid var(--acento-borde); background: var(--marcado);
+}
+.nota-nicho b { font-size: 36px; font-weight: 800; color: var(--blanco); line-height: 1; }
+.nota-nicho small { font-size: 10px; color: var(--tenue); text-align: center; }
+.canal-propuesto {
+  display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 16px;
+  border: 1px solid var(--acento-borde); background: radial-gradient(120% 160% at 100% 0%, var(--marcado), var(--panel) 60%);
+}
+.canal-propuesto h2 { font-size: 26px; font-weight: 800; }
+.canal-propuesto p { margin: 6px 0; line-height: 1.55; }
+.canal-propuesto .fila { display: flex; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .mind-hero { grid-template-columns: 1fr; padding: 18px; }
+  .mind-hero-logo svg { width: 72px; height: 72px; }
+  .mind-hero h1 { font-size: 26px; }
+}
+
 /* ---- movil: el menu es un cajon */
 @media (max-width: 960px) {
   body { padding-left: 0; }

@@ -5330,6 +5330,7 @@ function pintarLightAhora() {
     else if (APP.light.vista === 'preset') contenido.appendChild(vistaPresetLight());
     else if (APP.light.vista === 'estilo') contenido.appendChild(vistaEstiloLight());
     else if (APP.light.vista === 'elegir') contenido.appendChild(vistaElegirMind());
+    else if (APP.light.vista === 'nicho') contenido.appendChild(vistaNichoMind());
     else if (APP.light.vista === 'ideas') contenido.appendChild(vistaIdeasLight());
     else if (APP.light.vista === 'elegido') {
       /* TRES VISTAS DENTRO DE «elegido», y la elige LO QUE HAY: el encargo
@@ -5396,6 +5397,7 @@ function marcaMind(clase) {
 
 const ICONOS_MIND = {
   inicio: 'M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z',
+  mind: 'M12 3l1.8 4.6L18.5 9.5l-4.7 1.9L12 16l-1.8-4.6L5.5 9.5l4.7-1.9z M18 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z',
   videos: 'M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-.5-1.5-.5-2.5 1-1.5 2-1.5H18a3 3 0 0 0 3-3c0-5-4-9-9-9z M7.5 11h.01 M10 7.5h.01 M14.5 7.5h.01',
   todos: 'M3 4h18v16H3z M7 4v16 M17 4v16 M3 9h4 M3 15h4 M17 9h4 M17 15h4',
   shorts: 'M7 3h10v18H7z M11 18h2',
@@ -5414,7 +5416,7 @@ const ICONOS_MIND = {
 
 const ZONAS_MIND = [
   { grupo: 'Estudio', zonas: [
-    ['inicio', 'Inicio'], ['videos', 'Mis estilos'], ['todos', 'Vídeos'],
+    ['inicio', 'Inicio'], ['mind', 'Mind'], ['videos', 'Mis estilos'], ['todos', 'Vídeos'],
     ['shorts', 'Shorts'], ['documentales', 'Documentales'], ['ideas', 'Ideas y nicho']] },
   { grupo: 'Producción', zonas: [
     ['cola', 'Cola'], ['presupuesto', 'Presupuesto'], ['papelera', 'Papelera']] },
@@ -5426,6 +5428,7 @@ function zonaActivaMind() {
   const l = APP.light;
   if (l.vista === 'estilo' || l.vista === 'preset' || l.vista === 'crear' || l.vista === 'generando') return 'videos';
   if (l.vista === 'ideas') return 'ideas';
+  if (l.vista === 'nicho') return 'mind';
   if (l.vista === 'elegir') return l.tipoNuevo === 'short' ? 'shorts'
     : l.tipoNuevo === 'documental' ? 'documentales' : 'todos';
   if (l.vista === 'elegido') {
@@ -5703,6 +5706,14 @@ function vistaIdeasZonaMind() {
   caja.appendChild(h('div', { clase: 'mind-cab' },
     h('div', {}, h('div', { clase: 'eyebrow' }, 'Estudio'), h('h1', {}, 'Ideas y nicho'),
       h('p', { clase: 'meta' }, 'Elige un estilo: su nicho, ideas de vídeo, la competencia, tus vídeos revisados y un chat creativo.'))));
+  const nuevo = h('button', { clase: 'opcion-mind', estilo: 'margin:18px 0', onclick: () => irAZonaLight('mind') });
+  const ico = h('span', { clase: 'ico' });
+  ico.appendChild(iconoNav(ICONOS_MIND.mind));
+  nuevo.appendChild(ico);
+  nuevo.appendChild(h('span', { clase: 'crece' }, h('b', {}, '¿Todavía no tienes canal para ese tema?'),
+    h('small', {}, 'Estudio de nicho desde cero con Mind: demanda, competencia, dinero y el canal que te conviene.')));
+  nuevo.appendChild(iconoNav(ICONOS_MIND.flecha));
+  caja.appendChild(nuevo);
   const rejilla = h('div', { clase: 'rejilla-universos' });
   presetsLight().forEach((f, i) => rejilla.appendChild(tarjetaUniverso(f, i,
     () => irALight('ideas', { estiloAbierto: f.id }))));
@@ -5829,6 +5840,232 @@ function vistaPapeleraMind() {
   return caja;
 }
 
+
+/* ================================================================ MIND
+ *
+ * La pantalla de Mind: el asistente que lo hace todo (el mismo de la burbuja,
+ * con sus herramientas: pasos/mcp_estudio.py) y el ESTUDIO DE NICHO DESDE CERO
+ * (pasos/nicho.py), con «Crear este canal».
+ */
+const NICHOS = { lista: null, detalle: {}, sondeo: null, form: { idioma: 'es' } };
+
+function hablarConMind(texto) {
+  const t = String(texto || '').trim();
+  if (!t) return;
+  conmutarAsistente(true);
+  setTimeout(() => {
+    const campo = $('#asistente-texto');
+    if (campo) { campo.value = t; enviarAlAsistente(); }
+  }, 120);
+}
+
+function cargarNichosMind(forzar) {
+  if (!forzar && NICHOS.lista) return;
+  pedir(`${BASE}/api/nichos`).then(d => {
+    NICHOS.lista = (d || {}).nichos || [];
+    clearTimeout(NICHOS.sondeo);
+    if (NICHOS.lista.some(n => n.estado === 'pensando')) {
+      NICHOS.sondeo = setTimeout(() => {
+        if (['galeria', 'nicho'].includes(APP.light.vista)) {
+          cargarNichosMind(true);
+          if (APP.light.nichoAbierto) cargarNichoMind(APP.light.nichoAbierto, true);
+        }
+      }, 6000);
+    }
+    if (APP.light.vista === 'galeria' && zonaLight() === 'mind') pintarLight();
+  }).catch(() => { NICHOS.lista = NICHOS.lista || []; });
+}
+
+function cargarNichoMind(id, forzar) {
+  if (!forzar && NICHOS.detalle[id]) return;
+  pedir(`${BASE}/api/nichos/${encodeURIComponent(id)}`).then(d => {
+    NICHOS.detalle[id] = d || {};
+    if (APP.light.vista === 'nicho') pintarLight();
+  }).catch(e => { NICHOS.detalle[id] = { estado: 'error', error: e.message }; });
+}
+
+async function estudiarNichoMind() {
+  const f = NICHOS.form;
+  if (!String(f.tema || '').trim()) { toast('escribe el tema o la idea', true); return; }
+  try {
+    const d = await pedir(`${BASE}/api/nichos`, { method: 'POST', cuerpo: {
+      tema: f.tema, idioma: f.idioma || 'es', notas: f.notas || '', referencias: f.referencias || '' } });
+    NICHOS.form = { idioma: f.idioma || 'es' };
+    toast('estudiando el nicho: tarda 2-6 minutos, puedes seguir con otra cosa');
+    NICHOS.detalle[d.id] = d;
+    irALight('nicho', { nichoAbierto: d.id });
+    cargarNichosMind(true);
+  } catch (e) { toast(e.message, true); }
+}
+
+function crearCanalDeNicho(d) {
+  const c = d.canal || {};
+  APP.light.encargo = null;
+  const e = encargoLight();
+  Object.assign(e, {
+    nombre: c.nombre || d.tema || '', idioma: d.idioma || 'es',
+    estilo_prompt: c.estilo_prompt || '', tono_prompt: c.tono_prompt || '',
+    voz_prompt: c.voz_prompt || '', ritmo: c.ritmo || 'medio',
+  });
+  toast('el encargo del estilo ya va relleno: revísalo y créalo');
+  irALight('crear');
+}
+
+function vistaMindZona() {
+  cargarNichosMind();
+  const caja = h('div', { clase: 'casa-light' });
+  const hero = h('section', { clase: 'mind-hero' },
+    h('div', { clase: 'mind-hero-logo' }));
+  hero.firstChild.innerHTML = LOGO_MIND;
+  let texto = '';
+  const campo = h('textarea', {
+    rows: 3, 'data-foco': 'mind-pedido',
+    placeholder: '¿Qué hacemos? Ej.: «Estudia el nicho de las finanzas para jóvenes y créame el canal», «Hazme un short gratis del último vídeo», «¿Cuánto llevo gastado este mes?»',
+    oninput: ev => { texto = ev.target.value; },
+    onkeydown: ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); hablarConMind(texto); } },
+  });
+  hero.appendChild(h('div', { clase: 'mind-hero-cuerpo' },
+    h('div', { clase: 'eyebrow' }, 'Tu asistente'),
+    h('h1', {}, 'Hola, soy Mind.'),
+    h('p', { clase: 'meta' }, 'Estudio nichos, creo canales y vídeos, saco shorts y miniaturas, y vigilo la cola. '
+      + 'Lo gratis lo hago directamente; antes de gastar dinero siempre te digo cuánto y te pido un sí.'),
+    campo,
+    h('div', { clase: 'fila' },
+      h('span', { clase: 'crece' }),
+      h('button', { clase: 'primario grande', onclick: () => hablarConMind(texto || campo.value) }, 'Pedírselo a Mind'))));
+  caja.appendChild(hero);
+
+  const chips = h('div', { clase: 'chips-mind' });
+  ['¿Qué tengo en marcha y cuánto llevo gastado?',
+   'Hazme 3 shorts gratis de mi último vídeo montado',
+   'Revisa mis vídeos y dime qué mejorar',
+   'Propón 5 vídeos para mi estilo con mejor nicho',
+   'Crea un vídeo con la mejor idea de mi estudio de nicho']
+    .forEach(t => chips.appendChild(h('button', { clase: 'mini', onclick: () => hablarConMind(t) }, t)));
+  caja.appendChild(chips);
+
+  // ---- nicho desde cero
+  const f = NICHOS.form;
+  caja.appendChild(cabeceraSeccion('Estudio de nicho desde cero', 'antes de tener canal: ¿de qué hago vídeos?'));
+  caja.appendChild(h('section', { clase: 'bloque-shorts form-nicho' },
+    h('input', {
+      type: 'text', 'data-foco': 'nicho-tema', value: f.tema || '',
+      placeholder: 'Tema o idea, aunque sea vaga: «finanzas para jóvenes», «historia oscura», «algo de animales»',
+      oninput: ev => { f.tema = ev.target.value; },
+    }),
+    h('textarea', {
+      rows: 2, 'data-foco': 'nicho-refs', value: f.referencias || '',
+      placeholder: 'Opcional: vídeos o canales de referencia o de la competencia (enlaces o nombres, uno por línea)',
+      oninput: ev => { f.referencias = ev.target.value; },
+    }),
+    h('input', {
+      type: 'text', 'data-foco': 'nicho-notas', value: f.notas || '',
+      placeholder: 'Opcional: lo que quieras añadir (público, cuánto puedes invertir, qué no quieres…)',
+      oninput: ev => { f.notas = ev.target.value; },
+    }),
+    h('div', { clase: 'fila' },
+      h('select', { onchange: ev => { f.idioma = ev.target.value; }, value: f.idioma || 'es' },
+        [['es', 'Español'], ['en', 'Inglés'], ['pt', 'Portugués'], ['fr', 'Francés'], ['it', 'Italiano'], ['de', 'Alemán']]
+          .map(([v, t]) => h('option', { value: v }, t))),
+      h('span', { clase: 'crece' }),
+      h('button', { clase: 'primario', onclick: estudiarNichoMind }, '🔎 Estudiar (gratis)'))));
+
+  const lista = NICHOS.lista || [];
+  if (lista.length) {
+    const rejilla = h('div', { clase: 'seguir-mind' });
+    lista.forEach(n => rejilla.appendChild(h('button', {
+      clase: 'fila-mind', onclick: () => irALight('nicho', { nichoAbierto: n.id }),
+    },
+      h('span', { clase: 'sin-img' }, n.estado === 'pensando' ? '…' : n.puntuacion ? String(n.puntuacion) : '?'),
+      h('span', { clase: 'crece' }, h('b', {}, n.tema || n.pedido || ''),
+        h('small', {}, n.estado === 'pensando' ? 'estudiando…' : n.estado === 'error' ? 'falló: ábrelo para verlo'
+          : `${n.canal ? `canal propuesto: ${n.canal} · ` : ''}${fechaCorta(n.fecha) || ''}`)),
+      iconoNav(ICONOS_MIND.flecha))));
+    caja.appendChild(rejilla);
+  }
+  return caja;
+}
+
+function vistaNichoMind() {
+  const id = APP.light.nichoAbierto;
+  cargarNichoMind(id);
+  const d = NICHOS.detalle[id] || {};
+  if (d.estado === 'pensando') {
+    clearTimeout(NICHOS.sondeo);
+    NICHOS.sondeo = setTimeout(() => { if (APP.light.vista === 'nicho') cargarNichoMind(id, true); }, 6000);
+  }
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(h('div', { clase: 'migas' },
+    h('button', { clase: 'enlace', onclick: () => irAZonaLight('mind') }, 'Mind'),
+    h('span', {}, '›'), h('b', {}, d.tema || d.pedido || 'Estudio de nicho')));
+  if (d.estado === 'pensando') {
+    const seg = d.desde ? Math.round(Date.now() / 1000 - d.desde) : 0;
+    caja.appendChild(h('div', { clase: 'caja-info' },
+      `Mind está investigando «${d.pedido}» en internet… ${seg ? `(${duracionCorta(seg)})` : ''} Suele tardar de 2 a 6 minutos.`));
+    return caja;
+  }
+  if (d.estado === 'error') { caja.appendChild(cajaError(d.error || 'falló')); return caja; }
+  if (!d.canal) { caja.appendChild(h('div', { clase: 'cargando' }, 'cargando…')); return caja; }
+  const c = d.canal || {};
+  caja.appendChild(h('div', { clase: 'mind-cab' },
+    h('div', {}, h('div', { clase: 'eyebrow' }, 'Estudio de nicho'),
+      h('h1', {}, d.tema || d.pedido),
+      h('p', { clase: 'meta' }, d.resumen || '')),
+    h('div', { clase: 'nota-nicho' }, h('b', {}, `${d.puntuacion || '?'}`), h('small', {}, '/10 para empezar'))));
+  const datos = h('div', { clase: 'rejilla-saldo' });
+  [['📈 Demanda', d.demanda], ['⚔️ Competencia', d.competencia], ['💰 Dinero', d.monetizacion]]
+    .forEach(([t, v]) => v && datos.appendChild(h('div', { clase: 'saldo-mind' }, h('small', {}, t), h('span', {}, v))));
+  caja.appendChild(datos);
+
+  if ((d.subnichos || []).length) {
+    caja.appendChild(cabeceraSeccion('Subnichos con hueco'));
+    const r = h('div', { clase: 'rejilla-ideas' });
+    d.subnichos.forEach(s => r.appendChild(h('article', { clase: 'idea' },
+      h('div', { clase: 'sellos' }, h('span', { clase: 'sello-v' }, `dificultad ${s.dificultad || '?'}`)),
+      h('h3', {}, s.nombre), h('p', { clase: 'meta' }, s.por_que || ''))));
+    caja.appendChild(r);
+  }
+
+  caja.appendChild(cabeceraSeccion('El canal que te propongo'));
+  caja.appendChild(h('section', { clase: 'canal-propuesto' },
+    h('div', {},
+      h('h2', {}, c.nombre || ''),
+      (c.alternativas || []).length ? h('p', { clase: 'meta' }, `Otros nombres: ${c.alternativas.join(' · ')}`) : null,
+      h('p', {}, h('b', {}, 'Formato: '), c.formato || ''),
+      h('p', {}, h('b', {}, 'Cómo se ve: '), c.estilo_prompt || ''),
+      h('p', {}, h('b', {}, 'Cómo habla: '), c.tono_prompt || ''),
+      h('p', {}, h('b', {}, 'La voz: '), c.voz_prompt || '')),
+    h('div', { clase: 'fila' },
+      h('button', { clase: 'primario grande', onclick: () => crearCanalDeNicho(d) }, '✦ Crear este canal'),
+      h('button', {
+        onclick: () => hablarConMind(`Crea el canal del estudio de nicho ${d.id} («${c.nombre}») y prepárame los 3 primeros vídeos de su lista. Dime antes cuánto cuesta.`),
+      }, 'Que lo haga Mind'))));
+
+  if ((d.videos || []).length) {
+    caja.appendChild(cabeceraSeccion('Tus 10 primeros vídeos'));
+    const r = h('div', { clase: 'rejilla-ideas' });
+    d.videos.forEach(v => r.appendChild(h('article', { clase: 'idea' },
+      h('div', { clase: 'sellos' }, h('span', { clase: 'sello-v' + (v.tipo === 'documental' ? ' doc' : '') }, v.tipo || 'video')),
+      h('h3', {}, v.titulo), v.gancho ? h('p', { clase: 'gancho' }, v.gancho) : null)));
+    caja.appendChild(r);
+  }
+  if ((d.riesgos || []).length) {
+    caja.appendChild(cabeceraSeccion('Ojo con'));
+    caja.appendChild(h('section', { clase: 'nicho' }, h('ul', { clase: 'mejoras' }, ...d.riesgos.map(x => h('li', {}, x)))));
+  }
+  if ((d.fuentes || []).length) caja.appendChild(h('div', { clase: 'meta', estilo: 'margin-top:14px' }, 'Fuentes: ' + d.fuentes.slice(0, 8).join(' · ')));
+  caja.appendChild(h('div', { clase: 'fila', estilo: 'margin-top:18px' },
+    h('span', { clase: 'crece' }),
+    h('button', {
+      clase: 'mini fantasma peligro', onclick: async () => {
+        if (!confirm('¿Borrar este estudio?')) return;
+        await pedir(`${BASE}/api/nichos/${encodeURIComponent(d.id)}`, { method: 'DELETE' });
+        NICHOS.lista = null; irAZonaLight('mind');
+      },
+    }, 'Borrar estudio')));
+  return caja;
+}
+
 function shortsLight() { return (APP.light.datos || {}).shorts || { canales: [], recortes: [] }; }
 
 function esCanalShort(id) { return (shortsLight().canales || []).includes(id); }
@@ -5882,6 +6119,7 @@ function recientesPrimero(lista) {
 function vistaGaleriaLight() {
   const zona = zonaLight();
   if (zona === 'inicio') return vistaInicioMind();
+  if (zona === 'mind') return vistaMindZona();
   if (zona === 'todos') return vistaTodosMind();
   if (zona === 'ideas') return vistaIdeasZonaMind();
   if (zona === 'cola') return vistaColaMind();

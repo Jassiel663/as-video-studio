@@ -73,6 +73,8 @@ from . import canal  # noqa: E402,F401
 from . import miniaturas  # noqa: E402,F401
 # estudios (competencia, mis videos y el chat creativo de un estilo)
 from . import estudios  # noqa: E402,F401
+# nicho (estudio de nicho desde cero, sin estilo)
+from . import nicho  # noqa: E402,F401
 from . import p6_assets, p7_callouts, p8_render  # noqa: E402,F401
 # y repaso (lo que se escribe MIRANDO el video montado) el ultimo de los que
 # deciden: reparte notas en cambios de todos los pasos anteriores
@@ -113,5 +115,5 @@ __all__ = ["catalogo_visual", "conservar", "repaso",
            "p4_voz", "p5_revision_audio", "presets_voz", "presets_canal",
            "presets_light", "recetas", "sonido", "tipografia", "subtitulos", "tono", "transiciones",
            "voz_descrita",
-           "animar", "reales", "ideas", "canal", "miniaturas", "estudios", "shorts", "p6_assets", "p7_callouts", "p8_render",
+           "animar", "reales", "ideas", "canal", "miniaturas", "estudios", "nicho", "shorts", "p6_assets", "p7_callouts", "p8_render",
            "MODULOS", "modulo_de"]

@@ -256,6 +256,293 @@ HERRAMIENTAS = {
 }
 
 
+# ====================================================================== MIND
+#
+# LAS MANOS DEL ASISTENTE. Hasta aqui todo era mirar (y cancelar algo colgado).
+# Con esto Mind HACE: estudia nichos, crea estilos y videos, genera, saca
+# shorts, miniaturas, personajes del taller... por la misma API que la
+# pantalla, o sea exactamente lo que haria quien pulsa.
+#
+# EL DINERO NO SE GASTA SIN UN SI. Toda accion de pago calcula antes su coste y,
+# si `confirmo_coste` no llega a esa cifra, NO hace nada: devuelve
+# «NECESITA CONFIRMACION: cuesta X $». El prompt de sistema le manda preguntar
+# a la persona y volver a llamar con confirmo_coste=X solo si dice que si. Asi
+# la regla no depende de que el modelo se acuerde: la herramienta se niega.
+
+def _q(texto):
+    return urllib.parse.quote(str(texto or ""), safe="")
+
+
+def _necesita(confirmo, coste, que):
+    """None si se puede gastar `coste`; si no, el texto que lo pide."""
+    try:
+        coste = float(coste or 0)
+    except (TypeError, ValueError):
+        coste = 0.0
+    if coste < 0.005:
+        return None
+    try:
+        dado = float(confirmo or 0)
+    except (TypeError, ValueError):
+        dado = 0.0
+    if dado + 1e-6 >= round(coste, 2):
+        return None
+    return (f"NECESITA CONFIRMACION: {que} cuesta unos {coste:.2f} $. No se ha hecho "
+            f"nada. Pregunta a la persona si quiere gastarlo y, SOLO si contesta que "
+            f"si, vuelve a llamar con confirmo_coste={coste:.2f}.")
+
+
+def _json(datos):
+    return _recortar(json.dumps(datos, ensure_ascii=False, indent=1, default=str))
+
+
+def listar_estilos(argumentos):
+    """Los estilos (canales) con su id, y cuales son canales de shorts."""
+    codigo, datos = _llamar("GET", "/api/presets-light")
+    if codigo != 200:
+        return _error_de(codigo, datos)
+    shorts = set(((datos.get("shorts") or {}).get("canales")) or [])
+    lineas = [f"- {p.get('nombre')}  (id={p.get('id')})"
+              + ("  [canal de shorts]" if p.get("id") in shorts else "")
+              + "  · " + " · ".join(str((v or {}).get("texto") or v)[:60]
+                                    for v in (p.get("vinetas") or [])[:3])
+              for p in datos.get("presets") or []]
+    return "\n".join(lineas) or "no hay ningun estilo todavia"
+
+
+def listar_videos(argumentos):
+    """Los videos del estudio: id, nombre, estilo, tipo y si esta montado."""
+    codigo, datos = _llamar("GET", "/api/proyectos")
+    if codigo != 200:
+        return _error_de(codigo, datos)
+    filas = sorted((p for p in datos.get("proyectos") or [] if p.get("video_light")),
+                   key=lambda p: p.get("actualizado") or "", reverse=True)
+    lineas = [f"- {p.get('nombre')}  (id={p.get('id')}, estilo={p.get('estilo_light')}, "
+              f"{'short' if p.get('short') else 'documental' if p.get('documental') else 'video'}, "
+              f"{'MONTADO' if p.get('tiene_mp4') else 'en curso'}, {p.get('actualizado')})"
+              for p in filas[:40]]
+    return "\n".join(lineas) or "no hay videos todavia"
+
+
+def panel(argumentos):
+    """Lo que esta en marcha, el gasto del mes y el saldo de cada cuenta."""
+    codigo, datos = _llamar("GET", "/api/panel")
+    if codigo != 200:
+        return _error_de(codigo, datos)
+    _, saldo = _llamar("GET", "/api/saldo")
+    return _json({"panel": datos, "saldo": (saldo or {}).get("cuentas") if isinstance(saldo, dict) else saldo})
+
+
+def estudiar_nicho(argumentos):
+    """Estudio de nicho DESDE CERO (gratis). Tarda 2-6 min: luego leer_nicho."""
+    codigo, datos = _llamar("POST", "/api/nichos", {
+        "tema": argumentos.get("tema"), "idioma": argumentos.get("idioma") or "es",
+        "notas": argumentos.get("notas") or "", "referencias": argumentos.get("referencias") or []})
+    if codigo != 200:
+        return _error_de(codigo, datos)
+    return (f"estudio en marcha (id={datos.get('id')}). Tarda de 2 a 6 minutos: diselo a la "
+            f"persona y consultalo con leer_nicho cuando pregunte o en tu siguiente turno. "
+            f"Tambien sale en la pantalla Mind.")
+
+
+def leer_nicho(argumentos):
+    """Un estudio de nicho (o la lista si no se da id)."""
+    ident = str(argumentos.get("id") or "").strip()
+    if not ident:
+        codigo, datos = _llamar("GET", "/api/nichos")
+        return _error_de(codigo, datos) if codigo != 200 else _json(datos.get("nichos"))
+    codigo, datos = _llamar("GET", f"/api/nichos/{_q(ident)}")
+    return _error_de(codigo, datos) if codigo != 200 else _json(datos)
+
+
+def ideas_de_estilo(argumentos):
+    """Estudia el nicho de un estilo ya creado y propone 8 videos (gratis)."""
+    estilo = str(argumentos.get("estilo") or "").strip()
+    if argumentos.get("solo_leer"):
+        codigo, datos = _llamar("GET", f"/api/presets-light/{_q(estilo)}/ideas")
+    else:
+        codigo, datos = _llamar("POST", f"/api/presets-light/{_q(estilo)}/ideas",
+                                {"enfoque": argumentos.get("enfoque") or ""})
+    return _error_de(codigo, datos) if codigo != 200 else _json(datos)
+
+
+def estudio_de_estilo(argumentos):
+    """Competencia (canales dados) o revision de mis videos de un estilo (gratis)."""
+    estilo = str(argumentos.get("estilo") or "").strip()
+    tipo = str(argumentos.get("tipo") or "").strip()
+    if tipo not in ("competencia", "mis_videos"):
+        return "tipo tiene que ser competencia o mis_videos"
+    if argumentos.get("solo_leer"):
+        codigo, datos = _llamar("GET", f"/api/presets-light/{_q(estilo)}/estudios/{tipo}")
+    else:
+        codigo, datos = _llamar("POST", f"/api/presets-light/{_q(estilo)}/estudios/{tipo}",
+                                {"canales": argumentos.get("canales") or []})
+    return _error_de(codigo, datos) if codigo != 200 else _json(datos)
+
+
+def crear_estilo(argumentos):
+    """Crea un estilo (canal) nuevo: genera sus laminas de referencia. DE PAGO."""
+    encargo = {k: argumentos.get(k) or "" for k in
+               ("nombre", "idioma", "estilo_prompt", "tono_prompt", "voz_prompt", "ritmo")}
+    encargo["idioma"] = encargo["idioma"] or "es"
+    encargo["estilo_imagenes"] = []
+    codigo, plan = _llamar("POST", "/api/presets-light/plan", encargo)
+    if codigo != 200:
+        return _error_de(codigo, plan)
+    coste = int((plan or {}).get("imagenes") or 8) * 0.075
+    falta = _necesita(argumentos.get("confirmo_coste"), coste, f"crear el estilo «{encargo['nombre']}»")
+    if falta:
+        return falta
+    codigo, datos = _llamar("POST", "/api/presets-light", encargo, tiempo=120)
+    if codigo not in (200, 202):
+        return _error_de(codigo, datos)
+    return (f"estilo en marcha (taller={datos.get('taller')}, trabajo={datos.get('trabajo_id')}). "
+            f"Tarda unos minutos; sale en Mis estilos al terminar.")
+
+
+def crear_video(argumentos):
+    """Crea un video, short o documental con un estilo (no gasta: solo el encargo)."""
+    estilo = str(argumentos.get("estilo") or "").strip()
+    tipo = str(argumentos.get("tipo") or "video")
+    cuerpo = {"nombre": argumentos.get("nombre") or "", "material": argumentos.get("material") or "",
+              "formato": "vertical" if tipo == "short" else (argumentos.get("formato") or "horizontal"),
+              "duracion_objetivo_s": int(argumentos.get("duracion_s") or (60 if tipo == "short" else 300)),
+              "short": tipo == "short", "documental": "mezcla" if tipo == "documental" else ""}
+    codigo, datos = _llamar("POST", f"/api/presets-light/{_q(estilo)}/video", cuerpo, tiempo=120)
+    if codigo not in (200, 201):
+        return _error_de(codigo, datos)
+    pid = (datos.get("proyecto") or {}).get("id")
+    return (f"creado (proyecto={pid}). Siguiente: generar con tanda=guion (gratis), "
+            f"despues voz, y despues render (imagenes + montaje).")
+
+
+def generar(argumentos):
+    """Lanza una tanda de un video: guion, voz, video (imagenes) o render. DE PAGO salvo el guion."""
+    pid = _pid(argumentos)
+    tanda = str(argumentos.get("tanda") or "").strip()
+    if tanda not in ("guion", "voz", "video", "render"):
+        return "tanda tiene que ser guion, voz, video o render"
+    codigo, plan = _llamar("GET", f"/api/proyectos/{_q(pid)}/generar?tanda={tanda}")
+    if codigo != 200:
+        return _error_de(codigo, plan)
+    coste = ((plan or {}).get("coste") or {})
+    usd = coste.get("usd_por_generar", coste.get("usd_total", 0)) or 0
+    if tanda == "guion":
+        usd = 0
+    falta = _necesita(argumentos.get("confirmo_coste"), usd, f"la tanda {tanda} de {pid}")
+    if falta:
+        return falta
+    codigo, datos = _llamar("POST", f"/api/proyectos/{_q(pid)}/generar",
+                            {"tanda": tanda, "modo": "pendientes"}, tiempo=120)
+    if codigo not in (200, 202):
+        return _error_de(codigo, datos)
+    return f"tanda {tanda} lanzada (trabajo={datos.get('trabajo_id')}). Se ve en la Cola."
+
+
+def ajustar_video(argumentos):
+    """Animacion IA (video_ia lite|fast|'', video_ia_planos) y videos reales (video_real)."""
+    pid = _pid(argumentos)
+    params = {k: argumentos[k] for k in ("video_ia", "video_ia_planos", "video_real")
+              if k in argumentos}
+    if not params:
+        return "di que cambiar: video_ia, video_ia_planos o video_real"
+    codigo, datos = _llamar("PUT", f"/api/proyectos/{_q(pid)}/pasos/render/params",
+                            {"params": params})
+    return _error_de(codigo, datos) if codigo != 200 else f"ajustado: {params}. Se aplica al generar el render."
+
+
+def recorte_gratis(argumentos):
+    """Short GRATIS recortado de un video ya montado."""
+    pid = _pid(argumentos)
+    cuerpo = {"duracion_s": int(argumentos.get("duracion_s") or 45),
+              "encuadre": argumentos.get("encuadre") or "fondo"}
+    if argumentos.get("inicio_s") not in (None, ""):
+        cuerpo["inicio_s"] = argumentos.get("inicio_s")
+    codigo, datos = _llamar("POST", f"/api/proyectos/{_q(pid)}/recortes", cuerpo)
+    return _error_de(codigo, datos) if codigo not in (200, 202) else \
+        f"recorte en marcha (trabajo={datos.get('trabajo_id')}); sale en Shorts en un minuto."
+
+
+def short_de_video(argumentos):
+    """Crea un short con guion nuevo a partir de un video (crearlo no gasta)."""
+    pid = _pid(argumentos)
+    codigo, datos = _llamar("POST", f"/api/proyectos/{_q(pid)}/short",
+                            {"duracion_s": int(argumentos.get("duracion_s") or 60)})
+    return _error_de(codigo, datos) if codigo not in (200, 201) else \
+        f"short creado (proyecto={(datos.get('proyecto') or {}).get('id')}); falta generarlo."
+
+
+def miniaturas(argumentos):
+    """Tres miniaturas de YouTube para un video. DE PAGO (~0,25 $)."""
+    pid = _pid(argumentos)
+    falta = _necesita(argumentos.get("confirmo_coste"), 0.25, f"las miniaturas de {pid}")
+    if falta:
+        return falta
+    codigo, datos = _llamar("POST", f"/api/proyectos/{_q(pid)}/miniaturas",
+                            {"indicaciones": argumentos.get("indicaciones") or ""})
+    return _error_de(codigo, datos) if codigo != 200 else "miniaturas en marcha: salen en la pantalla del video."
+
+
+def taller(argumentos):
+    """Crea un personaje, lugar u objeto fijo de un estilo. DE PAGO (~0,10 $)."""
+    estilo = str(argumentos.get("estilo") or "").strip()
+    tipo = str(argumentos.get("tipo") or "personajes")
+    falta = _necesita(argumentos.get("confirmo_coste"), 0.10,
+                      f"dibujar «{argumentos.get('nombre')}» en el taller")
+    if falta:
+        return falta
+    codigo, datos = _llamar("POST", f"/api/presets-light/{_q(estilo)}/canal/{_q(tipo)}",
+                            {"nombre": argumentos.get("nombre"), "idea": argumentos.get("idea") or ""})
+    return _error_de(codigo, datos) if codigo != 200 else "en marcha: sale en la pestaña Taller del estilo."
+
+
+_TXT = {"type": "string"}
+_NUM = {"type": "number"}
+_CONF = {"type": "number", "description": "SOLO tras un si explicito de la persona: el coste que aceptó"}
+
+HERRAMIENTAS.update({
+    "listar_estilos": (listar_estilos, "Lista los estilos (canales) con su id.", {}),
+    "listar_videos": (listar_videos, "Lista los videos con id, estilo, tipo y si estan montados.", {}),
+    "panel": (panel, "Lo que se esta generando, el gasto del mes y el saldo de cada cuenta.", {}),
+    "estudiar_nicho": (estudiar_nicho,
+        "Estudio de nicho DESDE CERO (sin estilo): demanda, competencia, dinero, subnichos "
+        "y un canal propuesto con 10 videos. Gratis. Admite videos/canales de referencia.",
+        {"tema": _TXT, "idioma": _TXT, "notas": _TXT,
+         "referencias": {"type": "array", "items": _TXT, "description": "URLs o nombres de videos/canales"}}),
+    "leer_nicho": (leer_nicho, "Lee un estudio de nicho por id (sin id: la lista).", {"id": _TXT}),
+    "ideas_de_estilo": (ideas_de_estilo,
+        "Estudia el nicho de un estilo existente y propone videos (gratis). solo_leer=true para leer el ultimo.",
+        {"estilo": _TXT, "enfoque": _TXT, "solo_leer": {"type": "boolean"}}),
+    "estudio_de_estilo": (estudio_de_estilo,
+        "Competencia (con canales) o revision de mis_videos de un estilo (gratis). solo_leer=true para leer.",
+        {"estilo": _TXT, "tipo": _TXT, "canales": {"type": "array", "items": _TXT},
+         "solo_leer": {"type": "boolean"}}),
+    "crear_estilo": (crear_estilo,
+        "Crea un estilo/canal nuevo (dibuja sus laminas: DE PAGO, pide confirmacion).",
+        {"nombre": _TXT, "idioma": _TXT, "estilo_prompt": _TXT, "tono_prompt": _TXT,
+         "voz_prompt": _TXT, "ritmo": _TXT, "confirmo_coste": _CONF}),
+    "crear_video": (crear_video,
+        "Crea un video/short/documental con un estilo y su material (gratis: solo el encargo).",
+        {"estilo": _TXT, "nombre": _TXT, "material": _TXT, "tipo": _TXT,
+         "duracion_s": _NUM, "formato": _TXT}),
+    "generar": (generar,
+        "Lanza una tanda de un video: guion (gratis), voz, video o render (de pago, pide confirmacion).",
+        {"proyecto": _TXT, "tanda": _TXT, "confirmo_coste": _CONF}),
+    "ajustar_video": (ajustar_video,
+        "Cambia la animacion IA (video_ia: ''|lite|fast; video_ia_planos: primero|sin_texto|mitad|todos) "
+        "o los videos reales (video_real: ''|mezcla|maximo) de un video.",
+        {"proyecto": _TXT, "video_ia": _TXT, "video_ia_planos": _TXT, "video_real": _TXT}),
+    "recorte_gratis": (recorte_gratis, "Short GRATIS recortado de un video montado.",
+        {"proyecto": _TXT, "duracion_s": _NUM, "encuadre": _TXT, "inicio_s": _NUM}),
+    "short_de_video": (short_de_video, "Crea un short con guion nuevo a partir de un video (crear es gratis).",
+        {"proyecto": _TXT, "duracion_s": _NUM}),
+    "miniaturas": (miniaturas, "Tres miniaturas de YouTube para un video (de pago, pide confirmacion).",
+        {"proyecto": _TXT, "indicaciones": _TXT, "confirmo_coste": _CONF}),
+    "taller": (taller, "Crea un personaje/lugar/objeto fijo de un estilo (de pago, pide confirmacion).",
+        {"estilo": _TXT, "tipo": _TXT, "nombre": _TXT, "idea": _TXT, "confirmo_coste": _CONF}),
+})
+
+
 def lista_de_herramientas():
     salida = []
     for nombre, (_, descripcion, propiedades) in HERRAMIENTAS.items():
