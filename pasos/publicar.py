@@ -33,6 +33,10 @@ except ImportError:  # ejecutado con la carpeta pasos directamente en sys.path
     import medios
     import presets_canal
 
+#: Solo buscar en la web (el mini estudio del momento); nada mas.
+_SOLO_WEB = ("WebSearch", "WebFetch")
+_VETADAS = tuple(h for h in cli_claude.HERRAMIENTAS_VETADAS if h not in _SOLO_WEB)
+
 CARPETA = os.environ.get("ESTUDIO_PUBLICAR") or os.path.join(
     os.path.dirname(os.path.abspath(presets_canal.FICHERO)), "publicar")
 PLATAFORMAS = ("youtube", "tiktok", "facebook", "instagram")
@@ -51,6 +55,13 @@ INSTRUCCION = """Eres el community manager de un canal de videos. Escribe el \
 texto para publicar ESTE video en cada plataforma, en {idioma}, para que lo \
 encuentren y pulsen (SEO), sin clickbait que mienta.
 
+PRIMERO, UN MINI ESTUDIO DEL MOMENTO (hoy es {hoy}): busca en internet, rapido, \
+que esta funcionando ESTOS DIAS con este tema en YouTube Shorts, TikTok y \
+Reels en {idioma}: hashtags en tendencia, formatos y titulos que estan pegando, \
+noticias, fechas o eventos de esta semana con los que conectar, y la mejor hora \
+para publicar para ese publico. Usa lo que encuentres en los textos (sin forzar \
+lo que no encaje) y resumelo en "estudio".
+
 TITULO DE TRABAJO: {titulo}
 TIPO: {tipo} ({duracion})
 CANAL: {canal}
@@ -63,6 +74,10 @@ Devuelve SOLO este JSON:
 "descripcion": "<2-3 parrafos: gancho, de que va, llamada a suscribirse; despues \
 los capitulos si el video dura mas de 3 min, en lineas 'M:SS Titulo' empezando por 0:00; \
 despues 3-5 hashtags>", "etiquetas": ["<10-15 etiquetas de busqueda>"]}},
+ "estudio": {{"tendencias": ["<lo que esta funcionando ahora con este tema, 2-4 puntos>"], \
+"hashtags": ["<hashtags en tendencia que encajan>"], "momento": "<noticia, fecha o \
+evento de estos dias con el que conecta, o '' si no hay>", "mejor_hora": "<dia y hora \
+recomendados para publicar, con la zona horaria>", "fuentes": ["url"]}},
  "tiktok": {{"texto": "<max 150 caracteres, gancho + 3-5 hashtags>"}},
  "facebook": {{"texto": "<2-3 frases que inviten a ver y comentar>"}},
  "instagram": {{"texto": "<gancho, 1-2 frases y 5-8 hashtags>"}}}}
@@ -149,17 +164,21 @@ def generar_seo(proyecto, titulo, escenas, idioma="es", tipo="video", canal=""):
     instruccion = INSTRUCCION.format(
         idioma={"es": "español", "en": "inglés", "pt": "portugués"}.get(idioma, idioma),
         titulo=titulo, tipo=tipo, duracion=_mmss(duracion) + " min",
-        canal=canal or "(sin describir)", guion="\n".join(lineas)[:14000])
+        canal=canal or "(sin describir)", guion="\n".join(lineas)[:14000],
+        hoy=time.strftime("%Y-%m-%d"))
 
     def correr():
         try:
             datos, texto = None, ""
             for intento in range(2):
                 pedido = instruccion if not intento else instruccion + "\nSOLO el JSON."
+                # CON WEB: el mini estudio del momento busca de verdad
                 texto, _ = cli_claude.ejecutar(pedido, modelo="sonnet", esfuerzo="medium",
-                                               cwd=tempfile.gettempdir(), tiempo_max_s=300,
+                                               cwd=tempfile.gettempdir(), tiempo_max_s=480,
+                                               herramientas_vetadas=_VETADAS,
+                                               herramientas_permitidas=_SOLO_WEB,
                                                extra=["--no-session-persistence"],
-                                               para="escribir el SEO del video")
+                                               para="estudiar el momento y escribir el SEO")
                 encaje = re.search(r"\{.*\}", texto or "", re.S)
                 try:
                     datos = json.loads(encaje.group(0)) if encaje else None
@@ -171,6 +190,7 @@ def generar_seo(proyecto, titulo, escenas, idioma="es", tipo="video", canal=""):
             if not datos:
                 raise ValueError("la respuesta no trae el kit: " + " ".join(str(texto).split())[:160])
             limpio = {p: datos.get(p) if isinstance(datos.get(p), dict) else {} for p in PLATAFORMAS}
+            limpio["estudio"] = datos.get("estudio") if isinstance(datos.get("estudio"), dict) else {}
             _guardar_seo(proyecto, dict(limpio, estado="listo",
                                         fecha=time.strftime("%Y-%m-%dT%H:%M:%S")))
         except Exception as fallo:                          # noqa: BLE001

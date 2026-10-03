@@ -6393,12 +6393,16 @@ function panelPublicarTrabajado(t) {
       onclick: async () => {
         try {
           PUB_TRAB.datos[t.id] = await pedir(urlPubTrab(t.id, '/seo'), { method: 'POST', cuerpo: { estilo: d.estilo || '' } });
-          toast('escribiendo los textos: medio minuto');
+          toast('Mind está estudiando el momento y escribiendo: 1-3 minutos');
           cargarPubTrab(t.id, undefined, true);
         } catch (e) { toast(e.message, true); }
       },
-    }, seo.estado === 'pensando' ? 'escribiendo…' : (seo.youtube ? '↻ Reescribir textos' : '✍ Escribir textos SEO (gratis)'))));
+    }, seo.estado === 'pensando' ? 'escribiendo…' : (seo.youtube ? '↻ Reescribir textos' : '🔎 Estudiar el momento y escribir textos (gratis)'))));
   if (seo.estado === 'error' && seo.error) caja.appendChild(cajaError(seo.error));
+  if (seo.estado === 'pensando') caja.appendChild(h('div', { clase: 'caja-info' },
+    'Mind está estudiando qué funciona hoy con este tema y escribiendo los textos (1-3 minutos)…'));
+  const momento = estudioDelMomento(seo);
+  if (momento) caja.appendChild(momento);
   const rejilla = h('div', { clase: 'rejilla-pub' });
   [['tiktok', 'TikTok', '♪'], ['youtube', 'YouTube Shorts', '▶'], ['instagram', 'Instagram Reels', '◎'], ['facebook', 'Facebook', 'f']]
     .forEach(([red, nombre, ico]) => {
@@ -11235,6 +11239,18 @@ function subidaRed(v, d, red) {
   return caja;
 }
 
+/* EL MINI ESTUDIO DEL MOMENTO que hace Mind antes de escribir los textos. */
+function estudioDelMomento(seo) {
+  const e = (seo || {}).estudio || {};
+  if (!e.tendencias && !e.mejor_hora && !e.momento) return null;
+  return h('div', { clase: 'nicho estudio-momento' },
+    h('b', {}, '📊 Mini estudio del momento'),
+    (e.tendencias || []).length ? h('ul', { clase: 'mejoras' }, ...e.tendencias.map(x => h('li', {}, x))) : null,
+    e.momento ? h('p', {}, h('b', {}, 'Ahora mismo: '), e.momento) : null,
+    (e.hashtags || []).length ? h('p', {}, h('b', {}, 'Hashtags en tendencia: '), e.hashtags.join(' ')) : null,
+    e.mejor_hora ? h('p', {}, h('b', {}, '⏰ Mejor hora: '), e.mejor_hora) : null);
+}
+
 function bloquePublicarLight() {
   const v = videoAbierto();
   if (!v.pid || !v.guion) return null;
@@ -11252,12 +11268,16 @@ function bloquePublicarLight() {
       onclick: async () => {
         try {
           PUB_VIDEO.datos[v.pid] = await pedir(`${API.proyecto(v.pid)}/publicar/seo`, { method: 'POST' });
-          toast('escribiendo los textos: medio minuto');
+          toast('Mind está estudiando el momento y escribiendo: 1-3 minutos');
           cargarPublicarLight(v.pid, true);
         } catch (e) { toast(e.message, true); }
       },
-    }, pensando ? 'escribiendo…' : (seo.youtube ? '↻ Reescribir textos (gratis)' : '✍ Escribir textos SEO (gratis)'))));
+    }, pensando ? 'escribiendo…' : (seo.youtube ? '↻ Reescribir textos (gratis)' : '🔎 Estudiar el momento y escribir textos (gratis)'))));
   if (seo.estado === 'error' && seo.error) caja.appendChild(cajaError(seo.error));
+  if (seo.estado === 'pensando') caja.appendChild(h('div', { clase: 'caja-info' },
+    'Mind está estudiando qué funciona hoy con este tema y escribiendo los textos (1-3 minutos)…'));
+  const momento = estudioDelMomento(seo);
+  if (momento) caja.appendChild(momento);
   const orden = d.short ? ['tiktok', 'instagram', 'youtube', 'facebook'] : ['youtube', 'facebook', 'tiktok', 'instagram'];
   const destinos = d.destinos || {};
   const rejilla = h('div', { clase: 'rejilla-pub' });
