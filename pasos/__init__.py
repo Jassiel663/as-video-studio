@@ -77,6 +77,8 @@ from . import estudios  # noqa: E402,F401
 from . import nicho  # noqa: E402,F401
 # publicar (destinos por estilo y el kit SEO de cada video)
 from . import publicar  # noqa: E402,F401
+# viral (la edicion de shorts para retener)
+from . import viral  # noqa: E402,F401
 from . import p6_assets, p7_callouts, p8_render  # noqa: E402,F401
 # y repaso (lo que se escribe MIRANDO el video montado) el ultimo de los que
 # deciden: reparte notas en cambios de todos los pasos anteriores
@@ -117,5 +119,5 @@ __all__ = ["catalogo_visual", "conservar", "repaso",
            "p4_voz", "p5_revision_audio", "presets_voz", "presets_canal",
            "presets_light", "recetas", "sonido", "tipografia", "subtitulos", "tono", "transiciones",
            "voz_descrita",
-           "animar", "reales", "ideas", "canal", "miniaturas", "estudios", "nicho", "publicar", "shorts", "p6_assets", "p7_callouts", "p8_render",
+           "animar", "reales", "ideas", "canal", "miniaturas", "estudios", "nicho", "publicar", "viral", "shorts", "p6_assets", "p7_callouts", "p8_render",
            "MODULOS", "modulo_de"]

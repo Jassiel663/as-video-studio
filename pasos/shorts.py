@@ -252,7 +252,7 @@ def cortar(mp4, desde, hasta, encuadre, destino):
 
 
 def hacer_recorte(proyecto, duracion_s, encuadre="fondo", inicio_s=None,
-                  avisar=None, cwd=None):
+                  avisar=None, cwd=None, viral=False):
     """Saca un short GRATIS del video montado. -> ficha del recorte"""
     avisar = avisar or (lambda *a, **k: None)
     if encuadre not in ENCUADRES:
@@ -276,12 +276,26 @@ def hacer_recorte(proyecto, duracion_s, encuadre="fondo", inicio_s=None,
     fichero = f"short_{rid}.mp4"
     avisar(0.3, f"cortando {desde:.0f}-{hasta:.0f} s en vertical")
     cortar(mp4, desde, hasta, encuadre, os.path.join(_carpeta(proyecto), fichero))
+    if viral:
+        # EDICION VIRAL tambien en el recorte: el gancho (el titulo que eligio
+        # Claude, o la primera frase) y la barra de progreso. Sigue siendo 0 $.
+        avisar(0.8, "edicion viral: gancho y barra de progreso")
+        try:
+            import viral as _viral
+        except ImportError:
+            from . import viral as _viral
+        gancho = (titulo or " ".join(lista[primero]["texto"].split()[:5])).upper()[:60]
+        try:
+            _viral.pulir_en_sitio(os.path.join(_carpeta(proyecto), fichero), gancho)
+        except Exception as fallo:                          # noqa: BLE001
+            avisar(0.85, f"edicion viral no aplicada: {str(fallo)[:120]}")
     ficha = {"id": rid, "fichero": fichero,
              "ruta": f"{CARPETA_RECORTES}/{fichero}",
              "desde": desde, "hasta": hasta, "duracion": round(hasta - desde, 1),
              "planos": [lista[primero]["id"], lista[ultimo]["id"]],
              "titulo": titulo or lista[primero]["texto"][:60],
-             "encuadre": encuadre, "elegido_por": elegido_por, "creado": ahora()}
+             "encuadre": encuadre, "elegido_por": elegido_por, "creado": ahora(),
+             "viral": bool(viral)}
     anteriores = leer_json(os.path.join(_carpeta(proyecto), "recortes.json"))
     anteriores = anteriores if isinstance(anteriores, list) else []
     _guardar_lista(proyecto, anteriores + [ficha])

@@ -7129,7 +7129,7 @@ function vistaShortsLight() {
 }
 
 /* EL DESLIZADOR DE 15 A 60 S, compartido por los tres modos. */
-function deslizadorShort() {
+function deslizadorShortSolo() {
   const l = APP.light;
   const etiqueta = h('b', {}, `${l.shortSegundos} s`);
   return h('div', { clase: 'fila' },
@@ -7143,6 +7143,22 @@ function deslizadorShort() {
       },
     }),
     etiqueta);
+}
+
+/* EL DESLIZADOR Y LA EDICION VIRAL, juntos: los comparten los tres modos de
+   short. La edicion viral (pasos/viral.py) va encendida salvo que se apague. */
+function deslizadorShort() {
+  const l = APP.light;
+  return h('div', {},
+    deslizadorShortSolo(),
+    h('label', { clase: 'plano interruptor-viral' },
+      h('input', {
+        type: 'checkbox', checked: l.viral !== false,
+        onchange: ev => { l.viral = ev.target.checked; },
+      }),
+      h('span', {}, h('b', {}, '⚡ Edición viral'),
+        h('small', {}, ' gancho en el primer segundo, mini guion con giros cada pocos segundos, '
+          + 'cortes rápidos, subtítulos enormes, transiciones de golpe y barra de progreso'))));
 }
 
 function selectorVideoShort(videos, clave) {
@@ -7256,7 +7272,7 @@ async function sacarRecorteLight() {
   l.recortandoMsg = 'preparando…';
   pintarLight();
   try {
-    const cuerpo = { duracion_s: l.shortSegundos, encuadre: l.recorteEncuadre };
+    const cuerpo = { duracion_s: l.shortSegundos, encuadre: l.recorteEncuadre, viral: l.viral !== false };
     if (l.recorteTramo === 'manual') cuerpo.inicio_s = Number(l.recorteInicio) || 0;
     const { trabajo_id: tid } = await pedir(API.recortes(pid), { method: 'POST', cuerpo });
     // se sigue el trabajo hasta que acabe: Claude elige y ffmpeg corta, un minuto
@@ -7310,7 +7326,7 @@ async function crearShortLight(pid, segundos) {
   pintarLight();
   try {
     const datos = await pedir(API.short(pid),
-      { method: 'POST', cuerpo: { duracion_s: Math.round(Number(segundos) || 60) } });
+      { method: 'POST', cuerpo: { duracion_s: Math.round(Number(segundos) || 60), viral: APP.light.viral !== false } });
     const nuevo = (datos.proyecto || {}).id;
     if (!nuevo) throw new Error('el servidor no ha devuelto el vídeo nuevo');
     toast('short creado: pulsa «Generar» cuando quieras');
@@ -8130,6 +8146,8 @@ async function crearYGenerarLight(estilo) {
         guion_propio: !!e.guion_propio,
         // desde la zona Shorts con un canal de shorts: sale en «Tus shorts»
         short: !!e.short,
+        // la edicion viral de los shorts (pasos/viral.py), encendida salvo que se apague
+        viral: e.short ? APP.light.viral !== false : undefined,
         // desde la zona Documentales o el botón del estilo: con vídeos reales
         documental: e.documental || '',
         indicaciones: e.indicaciones,

@@ -407,7 +407,8 @@ def crear_video(argumentos):
     cuerpo = {"nombre": argumentos.get("nombre") or "", "material": argumentos.get("material") or "",
               "formato": "vertical" if tipo == "short" else (argumentos.get("formato") or "horizontal"),
               "duracion_objetivo_s": int(argumentos.get("duracion_s") or (60 if tipo == "short" else 300)),
-              "short": tipo == "short", "documental": "mezcla" if tipo == "documental" else ""}
+              "short": tipo == "short", "documental": "mezcla" if tipo == "documental" else "",
+              "viral": argumentos.get("viral", True) is not False}
     codigo, datos = _llamar("POST", f"/api/presets-light/{_q(estilo)}/video", cuerpo, tiempo=120)
     if codigo not in (200, 201):
         return _error_de(codigo, datos)
@@ -455,7 +456,8 @@ def recorte_gratis(argumentos):
     """Short GRATIS recortado de un video ya montado."""
     pid = _pid(argumentos)
     cuerpo = {"duracion_s": int(argumentos.get("duracion_s") or 45),
-              "encuadre": argumentos.get("encuadre") or "fondo"}
+              "encuadre": argumentos.get("encuadre") or "fondo",
+              "viral": argumentos.get("viral", True) is not False}
     if argumentos.get("inicio_s") not in (None, ""):
         cuerpo["inicio_s"] = argumentos.get("inicio_s")
     codigo, datos = _llamar("POST", f"/api/proyectos/{_q(pid)}/recortes", cuerpo)
@@ -467,7 +469,8 @@ def short_de_video(argumentos):
     """Crea un short con guion nuevo a partir de un video (crearlo no gasta)."""
     pid = _pid(argumentos)
     codigo, datos = _llamar("POST", f"/api/proyectos/{_q(pid)}/short",
-                            {"duracion_s": int(argumentos.get("duracion_s") or 60)})
+                            {"duracion_s": int(argumentos.get("duracion_s") or 60),
+                             "viral": argumentos.get("viral", True) is not False})
     return _error_de(codigo, datos) if codigo not in (200, 201) else \
         f"short creado (proyecto={(datos.get('proyecto') or {}).get('id')}); falta generarlo."
 
@@ -547,7 +550,7 @@ HERRAMIENTAS.update({
     "crear_video": (crear_video,
         "Crea un video/short/documental con un estilo y su material (gratis: solo el encargo).",
         {"estilo": _TXT, "nombre": _TXT, "material": _TXT, "tipo": _TXT,
-         "duracion_s": _NUM, "formato": _TXT}),
+         "duracion_s": _NUM, "formato": _TXT, "viral": {"type": "boolean"}}),
     "generar": (generar,
         "Lanza una tanda de un video: guion (gratis), voz, video o render (de pago, pide confirmacion).",
         {"proyecto": _TXT, "tanda": _TXT, "confirmo_coste": _CONF}),
@@ -555,10 +558,11 @@ HERRAMIENTAS.update({
         "Cambia la animacion IA (video_ia: ''|lite|fast; video_ia_planos: primero|sin_texto|mitad|todos) "
         "o los videos reales (video_real: ''|mezcla|maximo) de un video.",
         {"proyecto": _TXT, "video_ia": _TXT, "video_ia_planos": _TXT, "video_real": _TXT}),
-    "recorte_gratis": (recorte_gratis, "Short GRATIS recortado de un video montado.",
-        {"proyecto": _TXT, "duracion_s": _NUM, "encuadre": _TXT, "inicio_s": _NUM}),
-    "short_de_video": (short_de_video, "Crea un short con guion nuevo a partir de un video (crear es gratis).",
-        {"proyecto": _TXT, "duracion_s": _NUM}),
+    "recorte_gratis": (recorte_gratis, "Short GRATIS recortado de un video montado (viral=true por defecto: gancho y barra de progreso).",
+        {"proyecto": _TXT, "duracion_s": _NUM, "encuadre": _TXT, "inicio_s": _NUM, "viral": {"type": "boolean"}}),
+    "short_de_video": (short_de_video, "Crea un short con guion nuevo a partir de un video (crear es gratis). "
+        "viral=true por defecto: mini guion con gancho y giros, cortes rapidos, subtitulos enormes, barra de progreso.",
+        {"proyecto": _TXT, "duracion_s": _NUM, "viral": {"type": "boolean"}}),
     "miniaturas": (miniaturas, "Tres miniaturas de YouTube para un video (de pago, pide confirmacion).",
         {"proyecto": _TXT, "indicaciones": _TXT, "confirmo_coste": _CONF}),
     "publicar": (publicar,

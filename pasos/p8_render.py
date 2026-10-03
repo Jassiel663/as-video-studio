@@ -50,6 +50,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import animar  # noqa: E402
 import reales  # noqa: E402
+import viral  # noqa: E402
 import cartelas  # noqa: E402
 import estadisticas  # noqa: E402
 import medios  # noqa: E402
@@ -108,6 +109,9 @@ PARAMS_POR_DEFECTO = {
     # Lo que iguala unos efectos con otros va aparte y siempre puesto
     # (`sonido.igualar_por_papel`); esto decide cuanto suenan TODOS.
     "efectos_db": 0.0,
+    # EDICION VIRAL (pasos/viral.py): al terminar el MP4, la barra de progreso
+    # y el texto gancho de los 2 primeros segundos. Lo encienden los shorts.
+    "viral": False,
 }
 
 #: EN QUE SE GUARDAN LOS FOTOGRAMAS CAPTURADOS. JPEG de calidad 95, no PNG.
@@ -1560,6 +1564,15 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
                 lufs=p.get("musica_lufs"), cama=cama, ajuste_db=ajuste_musica,
                 fps=fps, calidad=p.get("calidad") or "media",
                 efectos_db=ajuste_efectos)
+    if p.get("viral"):
+        avisar(0.97, "edicion viral: gancho y barra de progreso")
+        try:
+            gancho = str(p.get("gancho") or "").strip() or viral.gancho_de(
+                " ".join(str(e.get("narracion") or "") for e in escenas))
+            viral.pulir_en_sitio(destino, gancho)
+        except Exception as fallo:                          # noqa: BLE001
+            # el video sale igual, sin el pulido: se dice y no se tumba
+            print(f"[render] edicion viral no aplicada: {fallo}", flush=True)
     duracion = medios.duracion_media(destino)
 
     # los assets son unidades heredadas: no se renderizan, pero se sellan igual

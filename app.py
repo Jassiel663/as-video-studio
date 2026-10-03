@@ -1055,6 +1055,10 @@ def hacer_short(pid: str, cuerpo: dict = Body(default=None)):
     guion = destino.estado.params("guion") or {}
     previas = str(guion.get("prompt_general") or "").strip()
     nota = INSTRUCCIONES_SHORT.format(segundos=segundos)
+    es_viral = datos.get("viral", True) is not False
+    if es_viral:
+        nota = f"{nota}\n\n{PASOS_MODULOS.viral.GUION}"
+        _aplicar_viral(destino)
     destino.estado.actualizar_params("guion", {
         "prompt_general": f"{previas}\n\n{nota}" if previas else nota,
         "bloques": {},
@@ -1065,6 +1069,12 @@ def hacer_short(pid: str, cuerpo: dict = Body(default=None)):
     return {"proyecto": ficha_proyecto(destino), "copia_de": ctx.id,
             "segundos": segundos,
             "pasos": [ficha_paso(destino, p["id"]) for p in PASOS]}
+
+
+def _aplicar_viral(ctx):
+    """Los mandos de la edicion viral (pasos/viral.py) en un video."""
+    for paso, params in PASOS_MODULOS.viral.PARAMS.items():
+        ctx.estado.actualizar_params(paso, dict(params))
 
 
 def _shorts():
@@ -1145,7 +1155,8 @@ def lanzar_recorte(pid: str, cuerpo: dict = Body(default=None)):
     def correr(avisar):
         ficha = mod.hacer_recorte(ctx.proyecto, segundos, encuadre=encuadre,
                                   inicio_s=inicio, avisar=avisar,
-                                  cwd=ctx.proyecto.raiz)
+                                  cwd=ctx.proyecto.raiz,
+                                  viral=datos.get("viral", True) is not False)
         ctx.bitacora.anotar("recorte_short", None, {
             "id": ficha["id"], "desde": ficha["desde"], "hasta": ficha["hasta"],
             "encuadre": encuadre, "elegido_por": ficha["elegido_por"]})
@@ -9662,6 +9673,15 @@ def crear_video_light(preset_id: str, cuerpo: dict = Body(default=None)):
         datos = dict(datos, formato="vertical")
         ctx.estado.actualizar_params("brief", {"tolerancia": TOLERANCIA_SHORT})
     avisos = _sembrar_video_light(ctx, datos)
+    # UN SHORT DESDE CERO, EN EDICION VIRAL salvo que se pida lo contrario: el
+    # mini guion viral va a las indicaciones del guion y los mandos a fondo
+    if es_short and datos.get("viral", True) is not False:
+        guion_p = ctx.estado.params("guion") or {}
+        previas = str(guion_p.get("prompt_general") or "").strip()
+        ctx.estado.actualizar_params("guion", {"prompt_general": (
+            f"{previas}\n\n{PASOS_MODULOS.viral.GUION}" if previas
+            else PASOS_MODULOS.viral.GUION)})
+        _aplicar_viral(ctx)
     # UN DOCUMENTAL: lo crea la zona Documentales. Nace con los videos reales
     # encendidos (mezcla salvo que pida el maximo) y marcado para esa zona
     modo_real = str(datos.get("documental") or "").strip().lower()
