@@ -9467,10 +9467,14 @@ def imagen_de_canal_light(preset_id: str, tipo: str, ident: str, foto: int = 0):
 
 @app.get("/api/presets-light/{preset_id}/publicar")
 def leer_destinos_light(preset_id: str):
-    """Donde se publica este estilo: sus cuentas de YouTube, TikTok, Facebook e Instagram."""
+    """Donde se publica este estilo: sus cuentas de YouTube, TikTok, Facebook e
+    Instagram, y que cuentas tiene CONECTADAS para subir solo."""
     if PASOS_MODULOS is None:
         raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
-    return PASOS_MODULOS.publicar.destinos(preset_id)
+    datos = PASOS_MODULOS.publicar.destinos(preset_id)
+    datos["conexiones"] = {"youtube": PASOS_MODULOS.youtube.conexion(preset_id),
+                           "app_youtube": PASOS_MODULOS.youtube.app_lista()}
+    return datos
 
 
 @app.put("/api/presets-light/{preset_id}/publicar")
@@ -9478,6 +9482,94 @@ def guardar_destinos_light(preset_id: str, cuerpo: dict = Body(default=None)):
     if PASOS_MODULOS is None:
         raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
     return PASOS_MODULOS.publicar.guardar_destinos(preset_id, _cuerpo(cuerpo))
+
+
+def _base_publica(peticion):
+    """La direccion publica del estudio (la que ve Google al volver)."""
+    fijada = os.environ.get("ESTUDIO_URL_PUBLICA")
+    if fijada:
+        return fijada.rstrip("/")
+    proto = peticion.headers.get("x-forwarded-proto") or peticion.url.scheme
+    host = peticion.headers.get("host") or peticion.url.netloc
+    return f"{proto}://{host}"
+
+
+@app.get("/api/publicar/youtube/conectar")
+def conectar_youtube(peticion: Request, estilo: str = Query(default="")):
+    """Manda a Google para conectar el canal de YouTube de ESTE estilo."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    if not estilo or not PASOS_MODULOS.presets_canal.leer(estilo):
+        raise ErrorApi(404, "ese estilo no existe")
+    try:
+        url = PASOS_MODULOS.youtube.url_de_autorizacion(estilo, _base_publica(peticion))
+    except ValueError as fallo:
+        return HTMLResponse(_pagina_vuelta("Falta la app de Google", str(fallo)), status_code=400)
+    return HTMLResponse("", status_code=302, headers={"Location": url})
+
+
+def _pagina_vuelta(titulo, texto):
+    import html as _html
+    return ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+            "<title>Mind Videos</title><body style='background:#000;color:#f5f5f7;font-family:system-ui;"
+            "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0'>"
+            "<div style='max-width:460px;padding:28px;border:1px solid #3b2d66;border-radius:16px;background:#0d0d11'>"
+            f"<h2 style='margin:0 0 10px'>{_html.escape(titulo)}</h2>"
+            f"<p style='color:#a1a1aa;line-height:1.5'>{_html.escape(texto)}</p>"
+            "<a href='/' style='display:inline-block;margin-top:12px;padding:10px 16px;border-radius:10px;"
+            "background:#8b5cf6;color:#fff;text-decoration:none'>Volver al estudio</a></div></body>")
+
+
+@app.get("/api/publicar/youtube/vuelta")
+def vuelta_youtube(peticion: Request, code: str = Query(default=""), state: str = Query(default=""),
+                   error: str = Query(default="")):
+    """La vuelta de Google: guarda el permiso del canal para ese estilo."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    if error or not code:
+        return HTMLResponse(_pagina_vuelta("No se ha conectado",
+                                           f"Google dice: {error or 'sin codigo'}. Puedes volver a intentarlo."))
+    try:
+        ficha = PASOS_MODULOS.youtube.completar(code, state, _base_publica(peticion))
+    except Exception as fallo:                              # noqa: BLE001
+        return HTMLResponse(_pagina_vuelta("No se ha conectado", str(fallo)))
+    return HTMLResponse(_pagina_vuelta(
+        "YouTube conectado",
+        f"El canal «{ficha.get('canal') or ficha.get('canal_id')}» queda conectado a este estilo. "
+        f"Sus videos ya se pueden subir solos desde Publicar."))
+
+
+@app.delete("/api/presets-light/{preset_id}/youtube")
+def desconectar_youtube(preset_id: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    PASOS_MODULOS.youtube.desconectar(preset_id)
+    return {"desconectado": preset_id}
+
+
+@app.post("/api/proyectos/{pid}/publicar/youtube")
+def subir_a_youtube(pid: str, cuerpo: dict = Body(default=None)):
+    """Sube el video al canal de YouTube conectado a su estilo, con el kit SEO."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    ctx = contexto(pid)
+    datos = _cuerpo(cuerpo)
+    ficha = _ficha_publicar(ctx)
+    seo = (ficha.get("seo") or {}).get("youtube") or {}
+    raiz = ctx.proyecto.raiz
+    try:
+        return PASOS_MODULOS.youtube.subir(
+            ctx.proyecto, ficha["estilo"],
+            os.path.join(raiz, ficha["mp4"]) if ficha["mp4"] else "",
+            datos.get("titulo") or seo.get("titulo") or ctx.proyecto.config.get("nombre", pid),
+            datos.get("descripcion") or seo.get("descripcion") or "",
+            datos.get("etiquetas") or seo.get("etiquetas") or [],
+            privacidad=str(datos.get("privacidad") or "private"),
+            publicar_en=str(datos.get("publicar_en") or ""),
+            miniatura=os.path.join(raiz, ficha["miniaturas"][0]) if ficha["miniaturas"] else "",
+            idioma=(ctx.estado.params("guion") or {}).get("idioma_salida") or "es")
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
 
 
 def _ficha_publicar(ctx):
@@ -9493,7 +9585,9 @@ def _ficha_publicar(ctx):
             "mp4": rel(mp4[-1]) if mp4 else "",
             "miniaturas": [rel(m) for m in minis],
             "short": bool(ctx.proyecto.config.get(CONFIG_SHORT) or ctx.proyecto.config.get(CONFIG_SHORT_DE)),
-            "seo": pub.leer_seo(ctx.proyecto)}
+            "seo": pub.leer_seo(ctx.proyecto),
+            "youtube": {"conexion": PASOS_MODULOS.youtube.conexion(estilo) if estilo else {},
+                        "subida": PASOS_MODULOS.youtube.leer_subida(ctx.proyecto)}}
 
 
 @app.get("/api/proyectos/{pid}/publicar")

@@ -116,6 +116,10 @@ def _vacio():
         # bancos de video gratis: el material REAL del modo documental
         # (pasos/reales.py). Gratis los dos; sin ninguna, el modo no hace nada
         "pexels": {"clave": ""},
+        # la app de Google (OAuth) con la que cada estilo conecta SU canal de
+        # YouTube para subir solo (pasos/youtube.py): el id y el secreto
+        "youtube_id": {"clave": ""},
+        "youtube_secreto": {"clave": ""},
         "pixabay": {"clave": ""},
         "claude_cli": {"cuentas": []},
     }
@@ -165,7 +169,8 @@ def _normalizar(datos):
     elif isinstance(cartesia, str):
         base["cartesia"]["clave"] = cartesia.strip()
 
-    for suelta in ("jamendo", "freesound", "google", "fal", "pexels", "pixabay"):
+    for suelta in ("jamendo", "freesound", "google", "fal", "pexels", "pixabay",
+                   "youtube_id", "youtube_secreto"):
         cruda = datos.get(suelta)
         if isinstance(cruda, dict):
             base[suelta]["clave"] = str(cruda.get("clave") or "").strip()
@@ -255,6 +260,8 @@ def adoptar_env():
     datos["google"]["clave"] = valores.get("GEMINI_API_KEY", "") or ""
     datos["fal"]["clave"] = valores.get("FAL_KEY", "") or ""
     datos["pexels"]["clave"] = valores.get("PEXELS_API_KEY", "") or ""
+    datos["youtube_id"]["clave"] = valores.get("YOUTUBE_CLIENT_ID", "") or ""
+    datos["youtube_secreto"]["clave"] = valores.get("YOUTUBE_CLIENT_SECRET", "") or ""
     datos["pixabay"]["clave"] = valores.get("PIXABAY_API_KEY", "") or ""
     return datos
 
@@ -343,6 +350,7 @@ def _fusionar(actual, peticion):
     # porque la clave de verdad no baja al navegador NUNCA y la pantalla manda
     # el centinela en su lugar.
     for suelta in ("cartesia", "jamendo", "freesound", "google", "fal", "pexels",
+                   "youtube_id", "youtube_secreto",
                    "pixabay"):
         if suelta in peticion:
             ficha = peticion.get(suelta)
@@ -493,6 +501,10 @@ def espejar_env(datos=None):
         nuestras["FAL_KEY"] = datos["fal"]["clave"]
     if datos["pexels"]["clave"]:
         nuestras["PEXELS_API_KEY"] = datos["pexels"]["clave"]
+    if datos["youtube_id"]["clave"]:
+        nuestras["YOUTUBE_CLIENT_ID"] = datos["youtube_id"]["clave"]
+    if datos["youtube_secreto"]["clave"]:
+        nuestras["YOUTUBE_CLIENT_SECRET"] = datos["youtube_secreto"]["clave"]
     if datos["pixabay"]["clave"]:
         nuestras["PIXABAY_API_KEY"] = datos["pixabay"]["clave"]
 
@@ -501,7 +513,7 @@ def espejar_env(datos=None):
     gestionadas = {"OPENAI_API_KEY", "CARTESIA_API_KEY",
                    "JAMENDO_CLIENT_ID", "FREESOUND_API_KEY",
                    "GEMINI_API_KEY", "FAL_KEY", "PEXELS_API_KEY",
-                   "PIXABAY_API_KEY"} | {
+                   "PIXABAY_API_KEY", "YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET"} | {
         f"OPENAI_API_KEY_{i}" for i in range(2, MAX_OPENAI + 1)}
 
     lineas, puestas = [], set()
@@ -585,6 +597,14 @@ def resumen(datos=None):
         "pexels": {
             "puesta": bool(datos["pexels"]["clave"]),
             "cola": tapar(datos["pexels"]["clave"]),
+        },
+        "youtube_id": {
+            "puesta": bool(datos["youtube_id"]["clave"]),
+            "cola": tapar(datos["youtube_id"]["clave"]),
+        },
+        "youtube_secreto": {
+            "puesta": bool(datos["youtube_secreto"]["clave"]),
+            "cola": tapar(datos["youtube_secreto"]["clave"]),
         },
         "pixabay": {
             "puesta": bool(datos["pixabay"]["clave"]),
@@ -673,3 +693,9 @@ def pexels():
 def pixabay():
     """La clave de Pixabay (videos reales, modo documental), si la hay."""
     return leer()["pixabay"]["clave"] or ""
+
+
+def youtube():
+    """(id, secreto) de la app de Google para subir a YouTube; vacios si no hay."""
+    datos = leer()
+    return (datos["youtube_id"]["clave"] or "", datos["youtube_secreto"]["clave"] or "")

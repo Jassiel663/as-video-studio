@@ -3011,6 +3011,12 @@ a.boton.primario {
 .pregunta-mind b { font-size: 14px; }
 .pregunta-mind .chips-mind { margin: 2px 0; }
 
+.conexiones { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.conexion { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--linea-suave); }
+a.boton.apagado { opacity: .5; }
+.subida-yt { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid var(--linea-suave); }
+.subida-yt .fila { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
 /* ---- movil: el menu es un cajon */
 @media (max-width: 960px) {
   body { padding-left: 0; }

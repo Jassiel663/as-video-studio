@@ -81,6 +81,8 @@ from . import publicar  # noqa: E402,F401
 from . import viral  # noqa: E402,F401
 # preguntas (lo que Mind pregunta antes del guion)
 from . import preguntas  # noqa: E402,F401
+# youtube (cada estilo conecta su canal y sube solo)
+from . import youtube  # noqa: E402,F401
 from . import p6_assets, p7_callouts, p8_render  # noqa: E402,F401
 # y repaso (lo que se escribe MIRANDO el video montado) el ultimo de los que
 # deciden: reparte notas en cambios de todos los pasos anteriores
@@ -121,5 +123,5 @@ __all__ = ["catalogo_visual", "conservar", "repaso",
            "p4_voz", "p5_revision_audio", "presets_voz", "presets_canal",
            "presets_light", "recetas", "sonido", "tipografia", "subtitulos", "tono", "transiciones",
            "voz_descrita",
-           "animar", "reales", "ideas", "canal", "miniaturas", "estudios", "nicho", "publicar", "viral", "preguntas", "shorts", "p6_assets", "p7_callouts", "p8_render",
+           "animar", "reales", "ideas", "canal", "miniaturas", "estudios", "nicho", "publicar", "viral", "preguntas", "youtube", "shorts", "p6_assets", "p7_callouts", "p8_render",
            "MODULOS", "modulo_de"]

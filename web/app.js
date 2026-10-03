@@ -2990,6 +2990,15 @@ function seccionOtrasClaves(ficha) {
   fila(['pexels', 'Pexels — vídeos reales', 'la API key de pexels.com/api (gratis)']);
   fila(['pixabay', 'Pixabay — vídeos reales', 'la API key de pixabay.com/api/docs '
     + '(gratis, sale al iniciar sesión)']);
+  // LA APP DE GOOGLE para subir a YouTube (pasos/youtube.py). Una para todo el
+  // sitio; despues cada estilo conecta SU canal en Publicar.
+  caja.appendChild(h('h3', {}, 'Publicar'));
+  caja.appendChild(h('div', { clase: 'pista' },
+    'La app de Google con la que cada estilo conecta su canal de YouTube para subir solo. '
+    + 'Se crea una vez en console.cloud.google.com (OAuth, aplicación web) con la dirección de vuelta '
+    + location.origin + '/api/publicar/youtube/vuelta'));
+  fila(['youtube_id', 'YouTube — ID de cliente', 'el «ID de cliente» de la app de Google (termina en .apps.googleusercontent.com)']);
+  fila(['youtube_secreto', 'YouTube — secreto de cliente', 'el «Secreto de cliente» de esa misma app']);
   return caja;
 }
 
@@ -10715,29 +10724,64 @@ function publicacionDeEstilo(ficha) {
     h('button', {
       clase: 'primario', onclick: async () => {
         try {
-          DESTINOS.datos[ficha.id] = await pedir(`${API.presetLight(ficha.id)}/publicar`, { method: 'PUT', cuerpo: ed });
-          DESTINOS.editando[ficha.id] = Object.assign({}, DESTINOS.datos[ficha.id]);
+          await pedir(`${API.presetLight(ficha.id)}/publicar`, { method: 'PUT', cuerpo: ed });
           toast('cuentas guardadas');
-          pintarLight();
+          cargarDestinosLight(ficha.id, true);
         } catch (e) { toast(e.message, true); }
       },
     }, 'Guardar cuentas')));
   caja.appendChild(form);
+  caja.appendChild(conexionesDeEstilo(ficha));
+  return caja;
+}
+
+/* LAS CONEXIONES: cada estilo conecta SU canal (cada persona, el suyo) para
+   que el estudio suba solo. YouTube ya; TikTok y Facebook, después. */
+function conexionesDeEstilo(ficha) {
+  const datos = DESTINOS.datos[ficha.id] || {};
+  const con = datos.conexiones || {};
+  const yt = con.youtube || {};
+  const caja = h('section', { clase: 'bloque-shorts conexiones' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, 'Subir solo'),
+      h('span', { clase: 'meta' }, 'conecta las cuentas de ESTE estilo; cada estilo, las suyas')));
+  const filaYt = h('div', { clase: 'fila conexion' },
+    h('span', { clase: 'ico-pub youtube' }, '▶'), h('b', {}, 'YouTube'),
+    h('span', { clase: 'crece meta' }, yt.canal ? `conectado: «${yt.canal}»`
+      : con.app_youtube ? 'sin conectar' : 'falta la app de Google en Configuración › Claves › Publicar'));
+  if (yt.canal) {
+    filaYt.appendChild(h('button', {
+      clase: 'mini fantasma peligro', onclick: async () => {
+        if (!confirm('¿Desconectar el canal de YouTube de este estilo?')) return;
+        await pedir(`${API.presetLight(ficha.id)}/youtube`, { method: 'DELETE' });
+        DESTINOS.datos[ficha.id] = null; cargarDestinosLight(ficha.id, true);
+      },
+    }, 'Desconectar'));
+  }
+  filaYt.appendChild(h('a', {
+    clase: 'boton mini primario' + (con.app_youtube ? '' : ' apagado'),
+    href: con.app_youtube ? `${BASE}/api/publicar/youtube/conectar?estilo=${encodeURIComponent(ficha.id)}` : '#',
+    onclick: ev => { if (!con.app_youtube) { ev.preventDefault(); conmutarConfig(); } },
+  }, yt.canal ? 'Cambiar de canal' : 'Conectar YouTube'));
+  caja.appendChild(filaYt);
+  [['tiktok', 'TikTok', '♪'], ['facebook', 'Facebook', 'f']].forEach(([id, nombre, ico]) =>
+    caja.appendChild(h('div', { clase: 'fila conexion' },
+      h('span', { clase: `ico-pub ${id}` }, ico), h('b', {}, nombre),
+      h('span', { clase: 'crece meta' }, 'próximamente: se conectará igual, cada estilo con su cuenta'))));
   caja.appendChild(h('div', { clase: 'pista' },
-    'Pronto: «Conectar» cada cuenta para que el estudio suba y programe solo. YouTube y TikTok '
-    + 'necesitan que registres una app una vez (Mind te guía).'));
+    'Al conectar entras con la cuenta de Google de ESE canal. Mientras Google no revise la app, '
+    + 'los vídeos subidos así quedan en privado.'));
   return caja;
 }
 
 /* ---------------------------------------------- el bloque del vídeo */
-const PUB_VIDEO = { datos: {}, sondeo: null };
+const PUB_VIDEO = { datos: {}, sondeo: null, opciones: {} };
 
 function cargarPublicarLight(pid, forzar) {
   if (!pid || (!forzar && PUB_VIDEO.datos[pid])) return;
   pedir(`${API.proyecto(pid)}/publicar`).then(d => {
     PUB_VIDEO.datos[pid] = d || {};
     clearTimeout(PUB_VIDEO.sondeo);
-    if (((d || {}).seo || {}).estado === 'pensando') {
+    if (((d || {}).seo || {}).estado === 'pensando' || (((d || {}).youtube || {}).subida || {}).estado === 'subiendo') {
       PUB_VIDEO.sondeo = setTimeout(() => { if (videoAbierto().pid === pid) cargarPublicarLight(pid, true); }, 4000);
     }
     refrescarVivosLight();
@@ -10766,6 +10810,49 @@ function campoCopiable(etiqueta, texto, filas) {
     h('div', { clase: 'fila' }, h('small', {}, etiqueta), h('span', { clase: 'crece' }),
       h('button', { clase: 'mini', onclick: () => copiarTexto(texto, etiqueta) }, '⧉ Copiar')),
     filas ? h('pre', {}, texto) : h('div', { clase: 'copiable-texto' }, texto));
+}
+
+function subidaYoutube(v, d) {
+  const yt = d.youtube || {};
+  const sub = yt.subida || {};
+  if (!(yt.conexion || {}).canal) {
+    return h('small', { clase: 'meta' }, 'Para subir solo, conecta el canal en Publicar (menú) con este estilo.');
+  }
+  const o = PUB_VIDEO.opciones[v.pid] || (PUB_VIDEO.opciones[v.pid] = { privacidad: 'private', cuando: '' });
+  const caja = h('div', { clase: 'subida-yt' });
+  if (sub.estado === 'subiendo') {
+    const pct = Math.round((Number(sub.progreso) || 0) * 100);
+    caja.appendChild(h('small', {}, `Subiendo a «${yt.conexion.canal}»… ${pct} %`));
+    caja.appendChild(h('div', { clase: 'barra-mind' }, h('span', { estilo: `width:${pct}%` })));
+    return caja;
+  }
+  if (sub.estado === 'listo') {
+    caja.appendChild(h('div', { clase: 'caja-info' }, '✅ Subido: ',
+      h('a', { href: sub.url, target: '_blank', rel: 'noopener' }, sub.url),
+      sub.publicar_en ? ` · programado para ${new Date(sub.publicar_en).toLocaleString('es-ES')}` : ` · ${sub.privacidad}`,
+      sub.aviso ? h('div', { clase: 'meta' }, sub.aviso) : null));
+  }
+  if (sub.estado === 'error') caja.appendChild(cajaError(sub.error || 'no se ha podido subir'));
+  caja.appendChild(h('div', { clase: 'fila' },
+    h('select', { onchange: ev => { o.privacidad = ev.target.value; }, value: o.privacidad },
+      [['private', 'Privado'], ['unlisted', 'Oculto'], ['public', 'Público']].map(([x, t]) => h('option', { value: x }, t))),
+    h('input', { type: 'datetime-local', value: o.cuando, title: 'Opcional: programar la publicación',
+      oninput: ev => { o.cuando = ev.target.value; } }),
+    h('span', { clase: 'crece' }),
+    h('button', {
+      clase: 'primario mini', disabled: !d.mp4,
+      onclick: async () => {
+        const destino = o.cuando ? `programado para ${new Date(o.cuando).toLocaleString('es-ES')}` : o.privacidad;
+        if (!confirm(`¿Subir este vídeo al canal «${yt.conexion.canal}» (${destino})?`)) return;
+        try {
+          await pedir(`${API.proyecto(v.pid)}/publicar/youtube`, { method: 'POST', cuerpo: {
+            privacidad: o.privacidad, publicar_en: o.cuando ? new Date(o.cuando).toISOString() : '' } });
+          toast('subiendo a YouTube…');
+          cargarPublicarLight(v.pid, true);
+        } catch (e) { toast(e.message, true); }
+      },
+    }, `⬆ Subir a «${yt.conexion.canal}»`)));
+  return caja;
 }
 
 function bloquePublicarLight() {
@@ -10812,6 +10899,7 @@ function bloquePublicarLight() {
       poner(campoCopiable('Texto', s.texto, true));
     }
     if (!s.titulo && !s.texto) poner(h('small', { clase: 'meta' }, 'Pulsa «Escribir textos SEO» arriba.'));
+    if (pl === 'youtube') poner(subidaYoutube(v, d));
     const nombreFich = `${(v.nombre || 'video').replace(/[^\wáéíóúñ -]/gi, '').slice(0, 60)}.mp4`;
     tarjeta.appendChild(h('div', { clase: 'fila acciones-pub' },
       d.mp4 ? h('a', { clase: 'boton mini', href: API.archivo(v.pid, d.mp4), download: nombreFich }, '⬇ Vídeo') : null,
