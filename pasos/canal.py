@@ -52,6 +52,15 @@ CARPETA = os.environ.get("ESTUDIO_CANAL") or os.path.join(
     os.path.dirname(os.path.abspath(presets_canal.FICHERO)), "canal")
 
 TIPOS = ("personajes", "lugares", "objetos")
+
+#: EL TALLER LIBRE: personajes, lugares y objetos creados DESDE CERO, sin
+#: estilo. Llevan su propio «aspecto» (como se dibujan) escrito por quien los
+#: crea, y despues se pueden PASAR a un estilo, donde se redibujan en el estilo
+#: de ese canal usando la hoja libre como referencia de identidad.
+LIBRE = "_libre"
+
+_PRESET_LIBRE = {"id": LIBRE, "nombre": "Sin estilo",
+                 "datos": {"estilo": {}, "guion": {"idioma_salida": "es"}, "origen": {}}}
 #: calidad de las hojas: son referencias que se copian en cada plano, merecen
 #: mas que la baja de los planos
 CALIDAD = "medium"
@@ -191,6 +200,39 @@ def _prompt(tipo, ficha, estilo):
     return base
 
 
+def _prompt_libre(tipo, ficha, aspecto):
+    """El prompt del taller libre: sin laminas, con el aspecto escrito."""
+    que = {"personajes": "a reference CHARACTER SHEET", "lugares": "a reference image of a LOCATION",
+           "objetos": "a reference sheet of an OBJECT"}[tipo]
+    lineas = [f"Draw {que} for an animated channel, in this art style: {aspecto}."]
+    if tipo == "personajes":
+        lineas.append("Two rows on a plain flat background: top row large head-and-shoulders "
+                      "portraits (front, three-quarter, profile), bottom row the same character "
+                      "standing full body. Exactly ONE character, identical in every view. Face fully "
+                      f"visible with eyes, eyebrows and mouth. The character: {ficha['descripcion']}.")
+    elif tipo == "lugares":
+        lineas.append(f"A wide establishing view, no people, evenly lit. The location: {ficha['descripcion']}.")
+    else:
+        lineas.append("Three views side by side (front, three-quarter, side) on a plain flat "
+                      f"background, no people. The object: {ficha['descripcion']}.")
+    if ficha.get("nota"):
+        lineas.append(f"The creator asked for this change, which is NOT optional: {ficha['nota']}.")
+    lineas.append("Do not annotate: no captions, labels, arrows or watermarks.")
+    return " ".join(lineas)
+
+
+def pasar_a_estilo(tipo, ident, estilo_destino):
+    """Copia un elemento del taller LIBRE a un estilo, redibujado en su estilo."""
+    origen = (leer(LIBRE).get(tipo) or {}).get(ident)
+    if not origen or origen.get("estado") != "listo":
+        raise ValueError("ese elemento del taller libre no existe o no esta terminado")
+    if not presets_canal.leer(estilo_destino):
+        raise ValueError(f"no hay ningun estilo '{estilo_destino}'")
+    return crear(estilo_destino, tipo, origen.get("nombre"),
+                 origen.get("idea") or origen.get("descripcion") or origen.get("nombre"),
+                 foto_ruta=origen.get("imagen") or "")
+
+
 def _con_contexto_de_coste(preset, funcion):
     """Lo que se gasta aqui se apunta en el TALLER del estilo, que es el
     proyecto donde se genero: asi sale en el coste global y en el saldo."""
@@ -207,11 +249,16 @@ def _con_contexto_de_coste(preset, funcion):
     return funcion()
 
 
-def crear(estilo_id, tipo, nombre, idea, foto_b64="", ident=None, nota=""):
-    """Crea (o rehace, con `ident`) una ficha del taller en un hilo. -> la ficha"""
+def crear(estilo_id, tipo, nombre, idea, foto_b64="", ident=None, nota="", aspecto="",
+          foto_ruta=""):
+    """Crea (o rehace, con `ident`) una ficha del taller en un hilo. -> la ficha
+
+    En el taller LIBRE (`estilo_id == LIBRE`) no hay laminas de estilo: manda
+    `aspecto` (como se dibuja, en palabras). `foto_ruta` es una imagen que ya
+    esta en disco como referencia (la usa «pasar a un estilo»)."""
     if tipo not in TIPOS:
         raise ValueError(f"tipo '{tipo}' no vale: {', '.join(TIPOS)}")
-    preset = presets_canal.leer(estilo_id)
+    preset = _PRESET_LIBRE if estilo_id == LIBRE else presets_canal.leer(estilo_id)
     if not preset:
         raise ValueError(f"no hay ningun estilo '{estilo_id}'")
     nombre = " ".join(str(nombre or "").split())[:60]
@@ -253,10 +300,16 @@ def crear(estilo_id, tipo, nombre, idea, foto_b64="", ident=None, nota=""):
             with _CANDADO:
                 _EN_MARCHA.discard(clave)
             raise ValueError("eso no parece una imagen (sube un jpg o png)")
+    elif foto_ruta and os.path.exists(foto_ruta):
+        foto = foto_ruta
     elif previa:
         foto = previa.get("foto") or ""
+    aspecto = " ".join(str(aspecto or (previa or {}).get("aspecto") or "").split())[:600]
+    if estilo_id == LIBRE and not aspecto:
+        aspecto = "clean modern 2D cartoon illustration, bold outlines, flat colours"
 
     ficha = _actualizar(estilo_id, tipo, ident, {
+        "aspecto": aspecto,
         "id": ident, "tipo": tipo, "nombre": nombre or (previa or {}).get("nombre", ident),
         "idea": idea or (previa or {}).get("idea", ""), "foto": foto,
         "nota": " ".join(str(nota or "").split())[:600],
@@ -265,6 +318,8 @@ def crear(estilo_id, tipo, nombre, idea, foto_b64="", ident=None, nota=""):
     def correr():
         try:
             estilo, resumen, idioma = _estilo_del_preset(preset)
+            if estilo_id == LIBRE:
+                resumen = aspecto
             descripcion = (previa or {}).get("descripcion") if previa and not idea else ""
             datos_ia = {}
             if not descripcion:
@@ -289,7 +344,8 @@ def crear(estilo_id, tipo, nombre, idea, foto_b64="", ident=None, nota=""):
             refs = _referencias(estilo, tipo)
             if foto and os.path.exists(foto):
                 refs = refs + [foto]
-            prompt = _prompt(tipo, fusion, estilo)
+            prompt = (_prompt_libre(tipo, fusion, aspecto) if estilo_id == LIBRE
+                      else _prompt(tipo, fusion, estilo))
             if foto:
                 prompt += (" The LAST reference image is a photo or drawing of the "
                            "real subject: keep its identity and key features, but "

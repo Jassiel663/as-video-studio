@@ -9423,7 +9423,19 @@ def crear_en_canal_light(preset_id: str, tipo: str, cuerpo: dict = Body(default=
     datos = _cuerpo(cuerpo)
     try:
         return PASOS_MODULOS.canal.crear(preset_id, tipo, datos.get("nombre"),
-                                         datos.get("idea"), datos.get("foto") or "")
+                                         datos.get("idea"), datos.get("foto") or "",
+                                         aspecto=datos.get("aspecto") or "")
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.post("/api/presets-light/_libre/canal/{tipo}/{ident}/pasar")
+def pasar_de_taller_libre(tipo: str, ident: str, cuerpo: dict = Body(default=None)):
+    """Pasa un personaje/lugar/objeto del taller libre a un estilo (~0,10 $)."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    try:
+        return PASOS_MODULOS.canal.pasar_a_estilo(tipo, ident, str(_cuerpo(cuerpo).get("estilo") or ""))
     except ValueError as fallo:
         raise ErrorApi(400, str(fallo))
 

@@ -82,6 +82,15 @@ original_motor = medios.motor
 medios.motor = lambda ruta: Imagen if "imagen" in ruta else original_motor(ruta)
 
 
+def esperar_en(estilo, tipo, ident):
+    for _ in range(100):
+        f = canal.leer(estilo)[tipo].get(ident) or {}
+        if f.get("estado") != "pensando":
+            return f
+        time.sleep(0.05)
+    return f
+
+
 def esperar(tipo, ident):
     for _ in range(100):
         f = canal.leer("pr1")[tipo].get(ident) or {}
@@ -143,6 +152,23 @@ try:
     comprobar("el lugar se presenta como lugar recurrente", "recurring location" in (frase or ""))
     frase = p6_assets.frase_de_referencia(4, {"papel": "reparto", "nombre": "la_taza", "objeto": True})
     comprobar("y el objeto como objeto, sin hablar de caras", "object" in frase and "faces" not in frase)
+
+    print("\n== taller libre (sin estilo) ==")
+    canal.crear(canal.LIBRE, "personajes", "Luna", "una astronauta con casco roto", aspecto="anime")
+    libre = esperar_en(canal.LIBRE, "personajes", "luna")
+    comprobar("se crea sin ningun estilo", libre.get("estado") == "listo", libre)
+    prompt, refs, _ = pedidos_imagen[-1]
+    comprobar("con el aspecto escrito y sin laminas", "anime" in prompt and refs == [], (prompt[:120], refs))
+    canal.pasar_a_estilo("personajes", "luna", "pr1")
+    pasada = esperar_en("pr1", "personajes", "luna")
+    prompt, refs, _ = pedidos_imagen[-1]
+    comprobar("pasado a un estilo: se redibuja en ese estilo", pasada.get("estado") == "listo"
+              and lamina in refs and refs[-1] == libre["imagen"], refs)
+    try:
+        canal.pasar_a_estilo("personajes", "luna", "no-existe")
+        comprobar("a un estilo que no existe, no", False)
+    except ValueError:
+        comprobar("a un estilo que no existe, no", True)
 finally:
     presets_canal.leer, cli_claude.ejecutar = originales
     medios.motor = original_motor

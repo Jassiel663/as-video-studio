@@ -6091,6 +6091,8 @@ function vistaNichoMind() {
  * que trabajan sobre un estilo llevan arriba el selector de estilo; el elegido
  * se recuerda entre secciones.
  */
+const TALLER_LIBRE = { id: '_libre', nombre: 'Sin estilo (desde cero)', libre: true };
+
 function estiloDeSeccion() {
   const l = APP.light;
   const todos = presetsLight();
@@ -6103,12 +6105,19 @@ function estiloDeSeccion() {
   return fichaLight(id);
 }
 
-function selectorEstiloSeccion() {
-  const actual = estiloDeSeccion();
+function selectorEstiloSeccion(conLibre) {
+  const actual = conLibre && APP.light.tallerLibre ? TALLER_LIBRE : estiloDeSeccion();
   const tira = h('div', { clase: 'selector-estilo' }, h('small', { clase: 'meta' }, 'Estilo:'));
+  if (conLibre) {
+    tira.appendChild(h('button', {
+      clase: 'chip-estilo libre' + (APP.light.tallerLibre ? ' activo' : ''),
+      onclick: () => { APP.light.tallerLibre = true; pintarLight(); },
+    }, '✦ Sin estilo (desde cero)'));
+  }
   presetsLight().forEach(f => tira.appendChild(h('button', {
     clase: 'chip-estilo' + (actual && f.id === actual.id ? ' activo' : ''),
     onclick: () => {
+      APP.light.tallerLibre = false;
       APP.light.estiloSeccion = f.id;
       try { localStorage.setItem('estudio.light.estiloSeccion', f.id); } catch (e) { /* sin almacén */ }
       pintarLight();
@@ -6134,8 +6143,8 @@ function vistaTallerZona() {
   const caja = h('div', { clase: 'casa-light' });
   caja.appendChild(cabeceraZona('Crear', 'Taller',
     'Personajes, lugares y objetos fijos de cada canal: se dibujan una vez y salen iguales en todos sus vídeos.'));
-  caja.appendChild(selectorEstiloSeccion());
-  const ficha = estiloDeSeccion();
+  caja.appendChild(selectorEstiloSeccion(true));
+  const ficha = APP.light.tallerLibre ? TALLER_LIBRE : estiloDeSeccion();
   caja.appendChild(ficha ? tallerDeEstilo(ficha) : h('div', { clase: 'vacio-seccion' }, 'Crea primero un estilo.'));
   return caja;
 }
@@ -7092,7 +7101,7 @@ async function crearEnTallerLight(ficha, tipo) {
   if (!String(f.nombre || '').trim()) { toast('ponle un nombre', true); return; }
   try {
     await pedir(urlTaller(ficha.id, tipo), {
-      method: 'POST', cuerpo: { nombre: f.nombre, idea: f.idea || '', foto: f.foto || '' },
+      method: 'POST', cuerpo: { nombre: f.nombre, idea: f.idea || '', foto: f.foto || '', aspecto: f.aspecto || '' },
     });
     TALLER.form[tipo] = {};
     toast('dibujando la hoja: tarda 1-2 minutos');
@@ -7139,6 +7148,23 @@ function tarjetaTaller(ficha, tipo, item) {
         clase: 'mini', disabled: item.estado === 'pensando',
         onclick: () => rehacerEnTallerLight(ficha, tipo, item),
       }, '↻ Rehacer'),
+      ficha.libre && item.estado === 'listo' ? h('select', {
+        clase: 'pasar-estilo',
+        onchange: async ev => {
+          const destino = ev.target.value;
+          ev.target.value = '';
+          if (!destino) return;
+          const nombre = (fichaLight(destino) || {}).nombre || destino;
+          if (!confirm(`¿Pasar «${item.nombre}» al estilo «${nombre}»? Se redibuja en su estilo (~0,10 $).`)) return;
+          try {
+            await pedir(`${API.presetLight('_libre')}/canal/${tipo}/${encodeURIComponent(item.id)}/pasar`,
+              { method: 'POST', cuerpo: { estilo: destino } });
+            toast(`pasando a «${nombre}»: lo verás en su taller en 1-2 minutos`);
+            TALLER.datos[destino] = null;
+          } catch (e) { toast(e.message, true); }
+        },
+      }, h('option', { value: '' }, 'Pasar a un estilo…'),
+        ...presetsLight().map(p => h('option', { value: p.id }, p.nombre || p.id))) : null,
       h('span', { clase: 'crece' }),
       h('button', { clase: 'mini fantasma peligro', onclick: () => borrarDeTallerLight(ficha, tipo, item) }, 'Quitar')));
 }
@@ -7163,6 +7189,11 @@ function formularioTaller(ficha, tipo, ejemplo) {
       rows: 2, placeholder: `Cómo es, en tus palabras: ${ejemplo}`, value: f.idea || '',
       'data-foco': `taller-idea-${tipo}`, oninput: ev => { f.idea = ev.target.value; },
     }),
+    ficha.libre ? h('input', {
+      type: 'text', value: f.aspecto || '', 'data-foco': `taller-aspecto-${tipo}`,
+      placeholder: 'Cómo se dibuja: «anime», «pixar 3D», «acuarela», «monigote de palitos», «realista»…',
+      oninput: ev => { f.aspecto = ev.target.value; },
+    }) : null,
     h('div', { clase: 'fila' },
       h('span', { clase: 'meta' }, 'Foto o dibujo de referencia (opcional) ', foto),
       h('span', { clase: 'crece' }),
@@ -7174,10 +7205,13 @@ function tallerDeEstilo(ficha) {
   cargarTallerLight(ficha.id);
   const d = TALLER.datos[ficha.id];
   const caja = h('div', { clase: 'taller' });
-  caja.appendChild(h('div', { clase: 'caja-info' },
-    'Lo que crees aquí sale IGUAL en todos los vídeos de este estilo: cuando el guion '
-    + 'nombra a un personaje, un lugar o un objeto del taller, se usa su hoja en vez de '
-    + 'inventarlo de nuevo. Se aplica a los vídeos que generes a partir de ahora.'));
+  caja.appendChild(h('div', { clase: 'caja-info' }, ficha.libre
+    ? 'Crea personajes, lugares y objetos desde cero, con el aspecto que tú describas. '
+      + 'Cuando quieras usarlos en un canal, pulsa «Pasar a un estilo»: se redibujan en el '
+      + 'estilo de ese canal manteniendo quién es.'
+    : 'Lo que crees aquí sale IGUAL en todos los vídeos de este estilo: cuando el guion '
+      + 'nombra a un personaje, un lugar o un objeto del taller, se usa su hoja en vez de '
+      + 'inventarlo de nuevo. Se aplica a los vídeos que generes a partir de ahora.'));
   if (!d) { caja.appendChild(h('div', { clase: 'cargando' }, 'cargando el taller…')); return caja; }
   if (d.error) { caja.appendChild(cajaError(d.error)); return caja; }
   TALLER_TIPOS.forEach(([tipo, titulo, ejemplo]) => {
