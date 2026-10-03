@@ -5421,6 +5421,7 @@ function marcaMind(clase) {
 }
 
 const ICONOS_MIND = {
+  marca: 'M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z',
   piloto: 'M12 2l3 7h-6z M5 13l7-4 7 4-7 9z M12 9v13',
   avisos: 'M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10 21h4',
   inicio: 'M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z',
@@ -5452,7 +5453,7 @@ const ZONAS_MIND = [
     ['shorts', 'Shorts'], ['documentales', 'Documentales']] },
   { grupo: 'Crear', zonas: [
     ['trabajado', 'Short trabajado'], ['taller', 'Taller'], ['miniaturas', 'Miniaturas'],
-    ['publicar', 'Publicar']] },
+    ['marca', 'Marca'], ['publicar', 'Publicar']] },
   { grupo: 'Investigar', zonas: [
     ['ideas', 'Ideas y nicho'], ['competencia', 'Competencia']] },
   { grupo: 'Producción', zonas: [
@@ -6623,6 +6624,7 @@ function vistaGaleriaLight() {
   if (zona === 'taller') return vistaTallerZona();
   if (zona === 'trabajado') return vistaTrabajadoZona();
   if (zona === 'piloto') return vistaPilotoZona();
+  if (zona === 'marca') return vistaMarcaZona();
   if (zona === 'avisos') return vistaAvisosZona();
   if (zona === 'competencia') return vistaCompetenciaZona();
   if (zona === 'miniaturas') return vistaMiniaturasZona();
@@ -8357,7 +8359,8 @@ function hayMp4Light() {
 function urlMp4Light() {
   const ficha = videoAbierto().fichas.render || {};
   const salidas = ficha.salidas || {};
-  const nombre = String(salidas.mp4 || 'video.mp4').split('\\').join('/').split('/').pop();
+  // con la marca del estilo, si la lleva: es el vídeo terminado de verdad
+  const nombre = String(salidas.final || salidas.mp4 || 'video.mp4').split('\\').join('/').split('/').pop();
   return urlDeVideoLight('render', nombre);
 }
 
@@ -14655,3 +14658,157 @@ setInterval(() => {
   if (APP.light && APP.light.vista === 'galeria' && zonaLight() === 'piloto'
       && Object.values(PILOTO.datos || {}).some(d => d.en_curso)) cargarPiloto(true);
 }, 20000);
+
+/* ================================================================ MARCA
+ *
+ * La marca de cada estilo (pasos/marca.py): marca de agua, intro y cierre.
+ * Se pone sola al terminar cada vídeo, en un vídeo final aparte.
+ */
+var MARCA = { datos: {}, sello: Date.now(), subiendo: '' };
+
+function cargarMarca(estilo, forzar) {
+  if (!forzar && MARCA.datos[estilo]) return;
+  MARCA.datos[estilo] = MARCA.datos[estilo] || { cargando: true };
+  pedir(`${BASE}/api/marca/${encodeURIComponent(estilo)}`).then(d => {
+    MARCA.datos[estilo] = d;
+    MARCA.sello = Date.now();
+    if (APP.light.vista === 'galeria' && zonaLight() === 'marca') pintarLight();
+  }).catch(err => { MARCA.datos[estilo] = { error: err.message }; pintarLight(); });
+}
+
+async function guardarMarca(estilo, cambios) {
+  try {
+    MARCA.datos[estilo] = await pedir(`${BASE}/api/marca/${encodeURIComponent(estilo)}`, { method: 'PUT', cuerpo: cambios });
+    MARCA.sello = Date.now();
+    pintarLight();
+  } catch (err) { toast(err.message, true); }
+}
+
+function subirPiezaMarca(estilo, que, accept) {
+  const entrada = h('input', { type: 'file', accept, clase: 'oculto-archivo', onchange: async ev => {
+    const f = ev.target.files[0];
+    if (!f) return;
+    const datos = new FormData();
+    datos.append('archivo', f);
+    MARCA.subiendo = que;
+    pintarLight();
+    try {
+      MARCA.datos[estilo] = await pedir(`${BASE}/api/marca/${encodeURIComponent(estilo)}/pieza/${que}`, { method: 'POST', cuerpo: datos });
+      MARCA.sello = Date.now();
+      toast(que === 'logo' ? 'logo guardado' : `${que === 'intro' ? 'intro' : 'cierre'} guardado`);
+    } catch (err) { toast(err.message, true); }
+    MARCA.subiendo = '';
+    pintarLight();
+  } });
+  document.body.appendChild(entrada);
+  entrada.click();
+  setTimeout(() => entrada.remove(), 60000);
+}
+
+async function borrarPiezaMarca(estilo, que) {
+  try {
+    MARCA.datos[estilo] = await pedir(`${BASE}/api/marca/${encodeURIComponent(estilo)}/pieza/${que}`, { method: 'DELETE' });
+    MARCA.sello = Date.now();
+    pintarLight();
+  } catch (err) { toast(err.message, true); }
+}
+
+function interruptorMarca(texto, activo, alCambiar) {
+  return h('label', { clase: 'plano interruptor-marca' },
+    h('input', { type: 'checkbox', checked: !!activo, onchange: ev => alCambiar(ev.target.checked) }),
+    h('b', {}, texto));
+}
+
+function bloquePiezaMarca(ficha, d, que) {
+  const id = ficha.id;
+  const p = d[que];
+  const caja = h('section', { clase: 'bloque-shorts marca-bloque' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, que === 'intro' ? '🎬 Intro' : '🔔 Cierre'),
+      h('span', { clase: 'crece' }),
+      interruptorMarca('Poner en los vídeos', p.activa, v => guardarMarca(id, { [que]: { activa: v } }))));
+  caja.appendChild(h('p', { clase: 'meta' }, que === 'intro'
+    ? 'Unos segundos con el logo o el nombre del canal antes de empezar. Corta: la gente se va si tarda.'
+    : 'Al final, «¡Suscríbete!» con el nombre del canal. 5 s dejan sitio para las pantallas finales de YouTube.'));
+  caja.appendChild(h('div', { clase: 'tira-modos' }, ...[['auto', 'Automática'], ['subido', 'La mía (subir vídeo)']]
+    .map(([t, txt]) => h('button', {
+      clase: 'mini' + (p.tipo === t ? ' activo' : ''),
+      onclick: () => ((t === 'subido' && !d.hay[que]) ? subirPiezaMarca(id, que, 'video/*') : guardarMarca(id, { [que]: { tipo: t } })),
+    }, txt))));
+  if (p.tipo === 'auto') {
+    caja.appendChild(h('div', { clase: 'fila' },
+      h('input', { type: 'text', clase: 'crece', placeholder: que === 'intro' ? (d.nombre_canal || 'Nombre del canal') : '¡Suscríbete!',
+        value: p.texto, 'data-foco': `marca-${que}-${id}`,
+        onchange: ev => guardarMarca(id, { [que]: { texto: ev.target.value } }) }),
+      h('input', { type: 'number', min: '1.5', max: '8', step: '0.5', value: String(p.segundos), clase: 'duracion-num',
+        title: 'segundos', onchange: ev => guardarMarca(id, { [que]: { segundos: Number(ev.target.value) } }) }),
+      h('span', { clase: 'meta' }, 's')));
+    caja.appendChild(h('video', { clase: 'muestra-marca', controls: true, preload: 'none',
+      src: `${BASE}/api/marca/${encodeURIComponent(id)}/muestra?que=${que}&v=${MARCA.sello}` }));
+  } else {
+    if (d.hay[que]) {
+      caja.appendChild(h('video', { clase: 'muestra-marca', controls: true, preload: 'metadata',
+        src: `${BASE}/api/marca/${encodeURIComponent(id)}/pieza/${que}?v=${MARCA.sello}` }));
+    }
+    caja.appendChild(h('div', { clase: 'fila' },
+      h('button', { clase: 'mini', disabled: MARCA.subiendo === que, onclick: () => subirPiezaMarca(id, que, 'video/*') },
+        MARCA.subiendo === que ? 'subiendo…' : (d.hay[que] ? 'Cambiar' : 'Subir vídeo')),
+      d.hay[que] ? h('button', { clase: 'mini fantasma peligro', onclick: () => borrarPiezaMarca(id, que) }, 'Quitar') : null,
+      h('span', { clase: 'meta' }, 'Un vídeo corto (máx. 20 s). Se ajusta solo al tamaño de cada vídeo.')));
+  }
+  return caja;
+}
+
+function vistaMarcaZona() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Crear', 'Marca',
+    'La marca de agua, la intro y el cierre de cada estilo. Se ponen solos al terminar cada vídeo y cada short, '
+    + 'en un vídeo final aparte (el original no se toca). Gratis.'));
+  caja.appendChild(selectorEstiloSeccion());
+  const ficha = estiloDeSeccion();
+  if (!ficha) { caja.appendChild(h('div', { clase: 'vacio-seccion' }, 'Crea primero un estilo.')); return caja; }
+  cargarMarca(ficha.id);
+  const d = MARCA.datos[ficha.id] || {};
+  if (d.error) { caja.appendChild(cajaError(d.error)); return caja; }
+  if (!d.agua) { caja.appendChild(h('div', { clase: 'cargando' }, 'cargando…')); return caja; }
+  const id = ficha.id;
+  const a = d.agua;
+
+  const agua = h('section', { clase: 'bloque-shorts marca-bloque' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, '💧 Marca de agua'), h('span', { clase: 'crece' }),
+      interruptorMarca('Poner en los vídeos', a.activa, v => guardarMarca(id, { agua: { activa: v } }))));
+  const ajustes = h('div', { clase: 'marca-ajustes' });
+  ajustes.appendChild(h('div', { clase: 'fila' },
+    d.hay.logo ? h('img', { clase: 'logo-marca', src: `${BASE}/api/marca/${encodeURIComponent(id)}/pieza/logo?v=${MARCA.sello}`, alt: 'logo' }) : null,
+    h('button', { clase: 'mini', disabled: MARCA.subiendo === 'logo', onclick: () => subirPiezaMarca(id, 'logo', 'image/png,image/jpeg,image/webp') },
+      MARCA.subiendo === 'logo' ? 'subiendo…' : d.hay.logo ? 'Cambiar logo' : 'Subir logo'),
+    d.hay.logo ? h('button', { clase: 'mini fantasma peligro', onclick: () => borrarPiezaMarca(id, 'logo') }, 'Quitar') : null,
+    h('span', { clase: 'meta' }, d.hay.logo ? 'PNG con fondo transparente queda mejor.' : 'Sin logo se pone el nombre en texto:')));
+  if (!d.hay.logo) {
+    ajustes.appendChild(h('input', { type: 'text', placeholder: '@' + String(d.nombre_canal || 'micanal').replace(/\s+/g, ''),
+      value: a.texto, 'data-foco': `marca-agua-${id}`, onchange: ev => guardarMarca(id, { agua: { texto: ev.target.value } }) }));
+  }
+  ajustes.appendChild(h('div', { clase: 'tira-modos' }, ...[['arriba_izquierda', '↖'], ['arriba_derecha', '↗'], ['abajo_izquierda', '↙'], ['abajo_derecha', '↘']]
+    .map(([pos, flecha]) => h('button', { clase: 'mini' + (a.posicion === pos ? ' activo' : ''), title: pos.replace('_', ' '),
+      onclick: () => guardarMarca(id, { agua: { posicion: pos } }) }, flecha))));
+  ajustes.appendChild(h('label', { clase: 'deslizador' }, h('span', {}, 'Tamaño'),
+    h('input', { type: 'range', min: '0.05', max: '0.3', step: '0.01', value: String(a.tamano),
+      onchange: ev => guardarMarca(id, { agua: { tamano: Number(ev.target.value) } }) })));
+  ajustes.appendChild(h('label', { clase: 'deslizador' }, h('span', {}, 'Opacidad'),
+    h('input', { type: 'range', min: '0.2', max: '1', step: '0.05', value: String(a.opacidad),
+      onchange: ev => guardarMarca(id, { agua: { opacidad: Number(ev.target.value) } }) })));
+  agua.appendChild(h('div', { clase: 'marca-agua' }, ajustes,
+    h('div', { clase: 'marca-muestras' },
+      h('img', { src: `${BASE}/api/marca/${encodeURIComponent(id)}/muestra?que=agua&v=${MARCA.sello}`, alt: 'muestra horizontal' }),
+      h('img', { clase: 'vertical', src: `${BASE}/api/marca/${encodeURIComponent(id)}/muestra?que=agua&short=1&v=${MARCA.sello}`, alt: 'muestra vertical' }))));
+  caja.appendChild(agua);
+  caja.appendChild(bloquePiezaMarca(ficha, d, 'intro'));
+  caja.appendChild(bloquePiezaMarca(ficha, d, 'outro'));
+
+  const s = d.en_shorts;
+  caja.appendChild(h('section', { clase: 'bloque-shorts marca-bloque' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, '▯ En los shorts')),
+    h('p', { clase: 'meta' }, 'En un short cada segundo cuenta: por defecto solo lleva la marca de agua (más arriba, para no chocar con los botones de TikTok).'),
+    h('div', { clase: 'fila casillas' }, ...[['agua', 'Marca de agua'], ['intro', 'Intro'], ['outro', 'Cierre']]
+      .map(([k, t]) => interruptorMarca(t, s[k], v => guardarMarca(id, { en_shorts: { [k]: v } }))))));
+  return caja;
+}

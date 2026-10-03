@@ -9593,6 +9593,9 @@ def _ficha_publicar(ctx):
     estilo = ctx.proyecto.config.get(CONFIG_ESTILO_LIGHT) or ""
     destinos = pub.destinos(estilo) if estilo else {p: "" for p in pub.PLATAFORMAS}
     mp4 = sorted(glob.glob(os.path.join(ctx.proyecto.raiz, "pasos", "render", "v*", "video.mp4")))
+    # CON LA MARCA DEL ESTILO, si la tiene: es la que se publica
+    if mp4 and os.path.exists(os.path.join(os.path.dirname(mp4[-1]), "video_final.mp4")):
+        mp4[-1] = os.path.join(os.path.dirname(mp4[-1]), "video_final.mp4")
     minis = sorted(glob.glob(os.path.join(ctx.proyecto.raiz, "miniaturas", "miniatura_*.png")))
     rel = lambda r: os.path.relpath(r, ctx.proyecto.raiz).replace(os.sep, "/")
     return {"estilo": estilo, "destinos": destinos,
@@ -9631,6 +9634,15 @@ def generar_seo(pid: str):
         raise ErrorApi(400, "este video todavia no tiene guion")
     guion = ctx.estado.params("guion") or {}
     ficha = _ficha_publicar(ctx)
+    # una intro delante corre los capitulos lo que dure (pasos/marca.py)
+    if ficha["mp4"].endswith("video_final.mp4"):
+        info = PASOS_MODULOS.medios.leer_json(os.path.join(
+            ctx.proyecto.raiz, os.path.dirname(ficha["mp4"]), "marca.json"), {}) or {}
+        intro = float(info.get("intro_s") or 0)
+        if intro:
+            escenas = [{"t_in": 0, "t_out": intro, "narracion": "(intro del canal)"}] + [
+                dict(e, t_in=float(e.get("t_in") or 0) + intro, t_out=float(e.get("t_out") or 0) + intro)
+                for e in escenas]
     estilo = PASOS_MODULOS.presets_canal.leer(ficha["estilo"]) if ficha["estilo"] else None
     PASOS_MODULOS.publicar.generar_seo(
         ctx.proyecto, ctx.proyecto.config.get("nombre", ctx.id), escenas,
@@ -9901,6 +9913,79 @@ def borrar_trabajado(ident: str):
     except ValueError as fallo:
         raise ErrorApi(404, str(fallo))
     return {"borrado": ident}
+
+
+def _marca_estilo(estilo):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    if not PASOS_MODULOS.presets_canal.leer(estilo):
+        raise ErrorApi(404, "ese estilo no existe")
+    return PASOS_MODULOS.marca
+
+
+@app.get("/api/marca/{estilo}")
+def leer_marca(estilo: str):
+    """La marca de agua, la intro y el cierre de un estilo (pasos/marca.py)."""
+    return _marca_estilo(estilo).leer(estilo)
+
+
+@app.put("/api/marca/{estilo}")
+def configurar_marca(estilo: str, cuerpo: dict = Body(default=None)):
+    try:
+        return _marca_estilo(estilo).configurar(estilo, _cuerpo(cuerpo))
+    except (TypeError, ValueError) as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.post("/api/marca/{estilo}/pieza/{que}")
+async def subir_pieza_marca(estilo: str, que: str, archivo: UploadFile = File(...)):
+    """El logo (imagen) o la intro / el cierre (video) propios."""
+    marca = _marca_estilo(estilo)
+    ext = os.path.splitext(archivo.filename or "")[1].lower()
+    os.makedirs(marca.CARPETA, exist_ok=True)
+    temporal = os.path.join(marca.CARPETA, f"_subida_{int(time.time() * 1000)}{ext}")
+    with open(temporal, "wb") as fh:
+        while True:
+            trozo = await archivo.read(4 * 1024 * 1024)
+            if not trozo:
+                break
+            fh.write(trozo)
+    try:
+        return marca.guardar_pieza(estilo, que, temporal, ext)
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.delete("/api/marca/{estilo}/pieza/{que}")
+def borrar_pieza_marca(estilo: str, que: str):
+    if que not in ("logo", "intro", "outro"):
+        raise ErrorApi(404, f"pieza desconocida: {que}")
+    return _marca_estilo(estilo).borrar_pieza(estilo, que)
+
+
+@app.get("/api/marca/{estilo}/pieza/{que}")
+def ver_pieza_marca(estilo: str, que: str):
+    ruta = _marca_estilo(estilo)._fichero(estilo, que) if que in ("logo", "intro", "outro") else ""
+    if not ruta:
+        raise ErrorApi(404, "no hay esa pieza")
+    return FileResponse(ruta, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/marca/{estilo}/muestra")
+def muestra_marca(estilo: str, que: str = Query(default="agua"), short: int = Query(default=0)):
+    """Para verlo antes: la marca de agua sobre una imagen, o la intro / el
+    cierre automaticos. Gratis."""
+    marca = _marca_estilo(estilo)
+    try:
+        if que == "agua":
+            return FileResponse(marca.muestra(estilo, bool(short)), media_type="image/png",
+                                headers={"Cache-Control": "no-store"})
+        if que in ("intro", "outro"):
+            return FileResponse(marca.muestra_pieza(estilo, que, bool(short)), media_type="video/mp4",
+                                headers={"Cache-Control": "no-store"})
+    except RuntimeError as fallo:
+        raise ErrorApi(500, str(fallo))
+    raise ErrorApi(404, f"muestra desconocida: {que}")
 
 
 @app.get("/api/avisos")

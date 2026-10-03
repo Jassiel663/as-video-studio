@@ -289,6 +289,19 @@ def hacer_recorte(proyecto, duracion_s, encuadre="fondo", inicio_s=None,
             _viral.pulir_en_sitio(os.path.join(_carpeta(proyecto), fichero), gancho)
         except Exception as fallo:                          # noqa: BLE001
             avisar(0.85, f"edicion viral no aplicada: {str(fallo)[:120]}")
+    # LA MARCA DEL ESTILO (pasos/marca.py): sobre el recorte, como short.
+    # Se corta del video.mp4 SIN marca, asi que no sale doble.
+    estilo_marca = str((getattr(proyecto, "config", None) or {}).get("estilo_light") or "")
+    if estilo_marca:
+        try:
+            import marca as _marca
+        except ImportError:
+            from . import marca as _marca
+        try:
+            if _marca.aplicar_en_sitio(os.path.join(_carpeta(proyecto), fichero), estilo_marca, True):
+                avisar(0.9, "marca del estilo puesta")
+        except Exception as fallo:                          # noqa: BLE001
+            avisar(0.9, f"marca no aplicada: {str(fallo)[:120]}")
     ficha = {"id": rid, "fichero": fichero,
              "ruta": f"{CARPETA_RECORTES}/{fichero}",
              "desde": desde, "hasta": hasta, "duracion": round(hasta - desde, 1),

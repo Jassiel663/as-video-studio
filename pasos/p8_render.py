@@ -51,6 +51,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import animar  # noqa: E402
 import reales  # noqa: E402
 import viral  # noqa: E402
+import marca  # noqa: E402
 import cartelas  # noqa: E402
 import estadisticas  # noqa: E402
 import medios  # noqa: E402
@@ -112,6 +113,9 @@ PARAMS_POR_DEFECTO = {
     # EDICION VIRAL (pasos/viral.py): al terminar el MP4, la barra de progreso
     # y el texto gancho de los 2 primeros segundos. Lo encienden los shorts.
     "viral": False,
+    # LA MARCA DEL ESTILO (pasos/marca.py): marca de agua, intro y cierre, en
+    # un video_final.mp4 APARTE (video.mp4 no se toca). Se apaga por video.
+    "marca": True,
 }
 
 #: EN QUE SE GUARDAN LOS FOTOGRAMAS CAPTURADOS. JPEG de calidad 95, no PNG.
@@ -1574,6 +1578,21 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
             # el video sale igual, sin el pulido: se dice y no se tumba
             print(f"[render] edicion viral no aplicada: {fallo}", flush=True)
     duracion = medios.duracion_media(destino)
+    final = os.path.join(trabajo, "video_final.mp4")
+    info_marca = None
+    estilo_marca = str((getattr(proyecto, "config", None) or {}).get("estilo_light") or "")
+    if p.get("marca", True) and estilo_marca and marca.activa(estilo_marca, alto > ancho):
+        avisar(0.98, "marca del estilo: marca de agua, intro y cierre")
+        try:
+            info_marca = marca.aplicar(destino, final, estilo_marca, alto > ancho)
+            medios.escribir_json(os.path.join(trabajo, "marca.json"), info_marca)
+        except Exception as fallo:                          # noqa: BLE001
+            info_marca = None
+            avisos_reales = list(avisos_reales) + [f"la marca del estilo no se ha podido poner: {str(fallo)[:200]}"]
+    if not info_marca:
+        for viejo in (final, os.path.join(trabajo, "marca.json")):
+            if os.path.exists(viejo):
+                os.remove(viejo)
 
     # los assets son unidades heredadas: no se renderizan, pero se sellan igual
     # o el paso nunca daria 'listo' aunque el video este hecho
@@ -1605,6 +1624,9 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
                       f"no está en el banco: el vídeo va sin música. Vuelve a "
                       f"elegirlo en «Música y efectos».")
     salidas = {"mp4": "video.mp4",
+               # con la marca del estilo: lo que se ve, se descarga y se publica
+               "final": "video_final.mp4" if info_marca else None,
+               "marca": info_marca,
                "duracion": round(duracion, 3),
                "clips": {e["id"]: f"clips/{e['id']}.mp4" for e in escenas},
                "fps": fps, "resolucion": [ancho, alto],

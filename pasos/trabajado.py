@@ -34,9 +34,10 @@ import time
 import uuid
 
 try:
-    from . import cli_claude, medios, presets_canal, viral
+    from . import cli_claude, marca, medios, presets_canal, viral
 except ImportError:  # ejecutado con la carpeta pasos directamente en sys.path
     import cli_claude
+    import marca
     import medios
     import presets_canal
     import viral
@@ -333,6 +334,12 @@ def editar(ruta_subida, nombre="", estilo_id="", maximo=60, encuadre="fondo", su
             if viral_on:
                 paso("gancho y barra de progreso", 0.9)
                 viral.pulir_en_sitio(final, (gancho or viral.gancho_de(" ".join(w["p"] for w in nuevas))).upper()[:60])
+            if estilo_id and marca.activa(estilo_id, True):
+                paso("la marca del estilo", 0.95)
+                try:
+                    marca.aplicar_en_sitio(final, estilo_id, True)
+                except Exception as fallo:                  # noqa: BLE001
+                    ficha["aviso_marca"] = f"la marca no se ha podido poner: {str(fallo)[:200]}"
             ficha.update(estado="listo", paso="listo", progreso=1.0, idioma=idioma,
                          duracion=round(medios.duracion_media(final) or 0, 1),
                          original_s=round(medios.duracion_media(original) or 0, 1),

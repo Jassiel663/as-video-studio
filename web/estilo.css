@@ -3059,3 +3059,20 @@ a.boton.apagado { opacity: .5; }
 .piloto-form .casillas label { margin-right: 6px; }
 .conexion select[multiple] { min-height: 64px; max-width: 220px; }
 .piloto-form input.duracion-num { width: 76px; }
+
+/* ------------------------------------------------------------------ marca */
+.marca-bloque .light-cab { align-items: center; }
+.interruptor-marca { display: inline-flex; align-items: center; gap: 8px; }
+.marca-agua { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 18px; align-items: start; }
+.marca-ajustes { display: flex; flex-direction: column; gap: 10px; }
+.marca-ajustes .fila, .marca-bloque .fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.logo-marca { width: 52px; height: 52px; object-fit: contain; border-radius: 8px;
+  background: repeating-conic-gradient(#2a2a35 0 25%, #1a1a22 0 50%) 0 0 / 12px 12px; }
+.deslizador { display: flex; align-items: center; gap: 10px; }
+.deslizador span { width: 80px; color: var(--tenue); font-size: 13px; }
+.deslizador input { flex: 1; }
+.marca-muestras { display: flex; gap: 10px; align-items: flex-start; }
+.marca-muestras img { width: 72%; border-radius: 10px; border: 1px solid var(--linea-suave); }
+.marca-muestras img.vertical { width: 24%; }
+video.muestra-marca { width: 100%; max-width: 420px; border-radius: 10px; background: #000; margin-top: 8px; }
+@media (max-width: 760px) { .marca-agua { grid-template-columns: 1fr; } }
