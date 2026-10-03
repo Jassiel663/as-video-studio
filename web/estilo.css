@@ -2997,6 +2997,20 @@ a.boton.primario {
 }
 .acciones-pub { margin-top: auto; flex-wrap: wrap; }
 
+/* ---- secciones con selector de estilo */
+.selector-estilo { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0 18px; }
+.chip-estilo {
+  display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--linea); color: var(--tenue); font-weight: 600; font-size: 13px;
+}
+.chip-estilo img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
+.chip-estilo.activo { color: var(--blanco); border-color: var(--acento); background: var(--marcado); }
+.pregunta-mind {
+  display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--linea-suave);
+}
+.pregunta-mind b { font-size: 14px; }
+.pregunta-mind .chips-mind { margin: 2px 0; }
+
 /* ---- movil: el menu es un cajon */
 @media (max-width: 960px) {
   body { padding-left: 0; }

@@ -9528,6 +9528,33 @@ def generar_seo(pid: str):
     return _ficha_publicar(ctx)
 
 
+@app.post("/api/preguntas")
+def preguntas_antes_del_guion(cuerpo: dict = Body(default=None)):
+    """Mind lee el encargo y pregunta lo que falta para un guion mejor. Gratis."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = _cuerpo(cuerpo)
+    estilo = ""
+    if datos.get("estilo"):
+        ficha = PASOS_MODULOS.presets_canal.leer(str(datos["estilo"]))
+        if ficha:
+            origen = (ficha.get("datos") or {}).get("origen") or {}
+            estilo = f"{ficha.get('nombre')}: {origen.get('tono_prompt') or ''} {origen.get('estilo_prompt') or ''}"
+    try:
+        return PASOS_MODULOS.preguntas.preguntar(
+            datos.get("material"), datos.get("nombre") or "", datos.get("tipo") or "video",
+            estilo, datos.get("duracion_s") or 0, datos.get("indicaciones") or "")
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.get("/api/preguntas/{ident}")
+def leer_preguntas(ident: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return PASOS_MODULOS.preguntas.leer(ident)
+
+
 @app.get("/api/nichos")
 def listar_nichos():
     """Los estudios de nicho desde cero (pasos/nicho.py)."""

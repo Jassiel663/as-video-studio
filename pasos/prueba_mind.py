@@ -71,6 +71,30 @@ try:
     except ValueError:
         comprobar("sin tema, ValueError", True)
 
+    print("\n== las preguntas antes del guion ==")
+    import preguntas
+
+    def claude_preguntas(instruccion, **kw):
+        pedidos.append((instruccion, kw))
+        return json.dumps({"preguntas": [{"pregunta": "¿Para quien es?", "por_que": "x",
+                                          "opciones": ["jovenes", "padres"]}, {"pregunta": ""}]}), {}
+    cli_claude.ejecutar = claude_preguntas
+    ficha = preguntas.preguntar("El leon vive en manada.", "El leon", "documental")
+    for _ in range(100):
+        d = preguntas.leer(ficha["id"])
+        if d.get("estado") != "pensando":
+            break
+        time.sleep(0.05)
+    comprobar("solo las preguntas con texto, con sus opciones",
+              d.get("estado") == "listo" and len(d["preguntas"]) == 1
+              and d["preguntas"][0]["opciones"] == ["jovenes", "padres"], d)
+    comprobar("lleva el material y el tipo", "manada" in pedidos[-1][0] and "documental" in pedidos[-1][0])
+    try:
+        preguntas.preguntar("", "")
+        comprobar("sin material ni titulo, ValueError", False)
+    except ValueError:
+        comprobar("sin material ni titulo, ValueError", True)
+
     print("\n== la regla del dinero ==")
     llamadas = []
 

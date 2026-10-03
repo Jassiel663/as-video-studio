@@ -5409,6 +5409,10 @@ const ICONOS_MIND = {
   config: 'M4 7h10 M18 7h2 M4 17h4 M12 17h8 M16 5v4 M10 15v4',
   nube: 'M7 18a4 4 0 0 1-.6-7.96A6 6 0 0 1 18 9.5a4.25 4.25 0 0 1-.5 8.5z',
   menu: 'M4 7h16 M4 12h16 M4 17h16',
+  taller: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21c0-4 3.6-7 8-7s8 3 8 7',
+  miniaturas: 'M3 5h18v14H3z M3 15l5-5 4 4 3-3 6 6 M15.5 8.5h.01',
+  publicar: 'M4 12l16-8-6 16-3-7z M11 13l9-9',
+  competencia: 'M3 17l6-6 4 4 8-8 M14 7h7v7',
   flecha: 'M9 6l6 6-6 6',
   mas: 'M12 5v14 M5 12h14',
   carpeta: 'M3 7h6l2 2h10v10H3z',
@@ -5417,7 +5421,11 @@ const ICONOS_MIND = {
 const ZONAS_MIND = [
   { grupo: 'Estudio', zonas: [
     ['inicio', 'Inicio'], ['mind', 'Mind'], ['videos', 'Mis estilos'], ['todos', 'Vídeos'],
-    ['shorts', 'Shorts'], ['documentales', 'Documentales'], ['ideas', 'Ideas y nicho']] },
+    ['shorts', 'Shorts'], ['documentales', 'Documentales']] },
+  { grupo: 'Crear', zonas: [
+    ['taller', 'Taller'], ['miniaturas', 'Miniaturas'], ['publicar', 'Publicar']] },
+  { grupo: 'Investigar', zonas: [
+    ['ideas', 'Ideas y nicho'], ['competencia', 'Competencia']] },
   { grupo: 'Producción', zonas: [
     ['cola', 'Cola'], ['presupuesto', 'Presupuesto'], ['papelera', 'Papelera']] },
 ];
@@ -5704,7 +5712,7 @@ function vistaTodosMind() {
 function vistaIdeasZonaMind() {
   const caja = h('div', { clase: 'casa-light' });
   caja.appendChild(h('div', { clase: 'mind-cab' },
-    h('div', {}, h('div', { clase: 'eyebrow' }, 'Estudio'), h('h1', {}, 'Ideas y nicho'),
+    h('div', {}, h('div', { clase: 'eyebrow' }, 'Investigar'), h('h1', {}, 'Ideas y nicho'),
       h('p', { clase: 'meta' }, 'Elige un estilo: su nicho, ideas de vídeo, la competencia, tus vídeos revisados y un chat creativo.'))));
   const nuevo = h('button', { clase: 'opcion-mind', estilo: 'margin:18px 0', onclick: () => irAZonaLight('mind') });
   const ico = h('span', { clase: 'ico' });
@@ -6066,6 +6074,197 @@ function vistaNichoMind() {
   return caja;
 }
 
+
+/* ======================================================= SECCIONES SUELTAS
+ *
+ * Taller, Competencia, Miniaturas y Publicar son funciones del sitio con su
+ * propia entrada en el menú, no pestañas escondidas dentro de un estilo. Las
+ * que trabajan sobre un estilo llevan arriba el selector de estilo; el elegido
+ * se recuerda entre secciones.
+ */
+function estiloDeSeccion() {
+  const l = APP.light;
+  const todos = presetsLight();
+  let id = l.estiloSeccion;
+  if (!todos.some(f => f.id === id)) {
+    try { id = localStorage.getItem('estudio.light.estiloSeccion') || ''; } catch (e) { id = ''; }
+  }
+  if (!todos.some(f => f.id === id)) id = (todos[0] || {}).id || '';
+  l.estiloSeccion = id;
+  return fichaLight(id);
+}
+
+function selectorEstiloSeccion() {
+  const actual = estiloDeSeccion();
+  const tira = h('div', { clase: 'selector-estilo' }, h('small', { clase: 'meta' }, 'Estilo:'));
+  presetsLight().forEach(f => tira.appendChild(h('button', {
+    clase: 'chip-estilo' + (actual && f.id === actual.id ? ' activo' : ''),
+    onclick: () => {
+      APP.light.estiloSeccion = f.id;
+      try { localStorage.setItem('estudio.light.estiloSeccion', f.id); } catch (e) { /* sin almacén */ }
+      pintarLight();
+    },
+  }, f.hay_miniatura ? h('img', { src: API.presetCanalMiniatura(f.id, f.modificado), alt: '' }) : null,
+    f.nombre || f.id)));
+  return tira;
+}
+
+function irASeccionConEstilo(zona, estiloId) {
+  APP.light.estiloSeccion = estiloId;
+  try { localStorage.setItem('estudio.light.estiloSeccion', estiloId); } catch (e) { /* sin almacén */ }
+  irAZonaLight(zona);
+}
+
+function cabeceraZona(eyebrow, titulo, texto, ...extra) {
+  return h('div', { clase: 'mind-cab' },
+    h('div', {}, h('div', { clase: 'eyebrow' }, eyebrow), h('h1', {}, titulo),
+      h('p', { clase: 'meta' }, texto)), ...extra);
+}
+
+function vistaTallerZona() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Crear', 'Taller',
+    'Personajes, lugares y objetos fijos de cada canal: se dibujan una vez y salen iguales en todos sus vídeos.'));
+  caja.appendChild(selectorEstiloSeccion());
+  const ficha = estiloDeSeccion();
+  caja.appendChild(ficha ? tallerDeEstilo(ficha) : h('div', { clase: 'vacio-seccion' }, 'Crea primero un estilo.'));
+  return caja;
+}
+
+function vistaCompetenciaZona() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Investigar', 'Competencia',
+    'Pega los canales que compiten con cada estilo y Mind te dice qué les funciona y cómo ganarles. '
+    + '¿Aún no tienes canal para ese tema? Usa el estudio de nicho desde cero en Mind.'));
+  caja.appendChild(selectorEstiloSeccion());
+  const ficha = estiloDeSeccion();
+  caja.appendChild(ficha ? estudioCompetencia(ficha) : h('div', { clase: 'vacio-seccion' }, 'Crea primero un estilo.'));
+  return caja;
+}
+
+/* Abre un vídeo en su pantalla y baja hasta un bloque (miniaturas, publicar). */
+async function abrirVideoEn(pid, clase) {
+  await abrirVideoLight(pid);
+  APP.light.video.vista = 'video';
+  pintarLight();
+  setTimeout(() => {
+    const nodo = document.querySelector(`.${clase}`);
+    if (nodo) nodo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 700);
+}
+
+function rejillaVideosAccion(lista, texto, clase) {
+  if (!lista.length) return h('div', { clase: 'vacio-seccion' }, 'Todavía no hay vídeos con guion en este estilo.');
+  const rejilla = h('div', { clase: 'rejilla-videos' });
+  lista.forEach(v => {
+    const t = tarjetaVideoLight(v);
+    const acciones = t.querySelector('.acciones-v');
+    if (acciones) {
+      vaciar(acciones);
+      acciones.appendChild(h('button', { clase: 'mini primario', onclick: () => abrirVideoEn(v.id, clase) }, texto));
+    }
+    rejilla.appendChild(t);
+  });
+  return rejilla;
+}
+
+function vistaMiniaturasZona() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Crear', 'Miniaturas',
+    'Tres miniaturas de YouTube por vídeo, en el estilo del canal y con sus personajes (~0,25 $).'));
+  caja.appendChild(selectorEstiloSeccion());
+  const ficha = estiloDeSeccion();
+  const lista = ficha ? recientesPrimero(videosDeEstilo(ficha.id)) : [];
+  caja.appendChild(rejillaVideosAccion(lista, '🖼 Diseñar miniaturas', 'miniaturas'));
+  return caja;
+}
+
+function vistaPublicarZona() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Crear', 'Publicar',
+    'Las cuentas de cada estilo y, para cada vídeo, el título, la descripción, las etiquetas y la subida a esas cuentas.'));
+  caja.appendChild(selectorEstiloSeccion());
+  const ficha = estiloDeSeccion();
+  if (!ficha) { caja.appendChild(h('div', { clase: 'vacio-seccion' }, 'Crea primero un estilo.')); return caja; }
+  caja.appendChild(cabeceraSeccion('Las cuentas de este estilo'));
+  caja.appendChild(publicacionDeEstilo(ficha));
+  caja.appendChild(cabeceraSeccion('Sus vídeos'));
+  caja.appendChild(rejillaVideosAccion(recientesPrimero(videosDeEstilo(ficha.id)).filter(v => v.tiene_mp4),
+    '📣 Preparar publicación', 'publicar'));
+  return caja;
+}
+
+/* ---------------------------------------------- Mind pregunta antes del guion */
+const PREGUNTAS_MIND = { datos: null, respuestas: {}, sondeo: null };
+
+async function pedirPreguntasMind(e, estilo) {
+  try {
+    PREGUNTAS_MIND.datos = await pedir(`${BASE}/api/preguntas`, { method: 'POST', cuerpo: {
+      material: e.material || '', nombre: e.nombre || '', estilo: (estilo || {}).id || '',
+      tipo: e.short ? 'short' : e.documental ? 'documental' : 'video',
+      duracion_s: e.duracion_objetivo_s || 0, indicaciones: e.indicaciones || '' } });
+    PREGUNTAS_MIND.respuestas = {};
+    pintarLight();
+    sondearPreguntasMind();
+  } catch (err) { toast(err.message, true); }
+}
+
+function sondearPreguntasMind() {
+  clearTimeout(PREGUNTAS_MIND.sondeo);
+  const d = PREGUNTAS_MIND.datos;
+  if (!d || d.estado !== 'pensando') return;
+  PREGUNTAS_MIND.sondeo = setTimeout(async () => {
+    try { PREGUNTAS_MIND.datos = await pedir(`${BASE}/api/preguntas/${d.id}`); } catch (err) { /* sigue */ }
+    pintarLight();
+    sondearPreguntasMind();
+  }, 3000);
+}
+
+function bloquePreguntasMind(e, estilo) {
+  const d = PREGUNTAS_MIND.datos;
+  const caja = h('div', {});
+  if (!d || d.estado === 'error') {
+    caja.appendChild(h('div', { clase: 'fila' },
+      h('span', { clase: 'meta crece' }, d && d.error ? `No ha salido: ${d.error}` :
+        'Mind lee tu material y te pregunta lo que falta para que el vídeo salga mejor. Gratis.'),
+      h('button', { onclick: () => pedirPreguntasMind(e, estilo) }, '🧠 Que Mind me pregunte')));
+    return caja;
+  }
+  if (d.estado === 'pensando') {
+    caja.appendChild(h('div', { clase: 'meta' }, 'Mind está leyendo tu encargo…'));
+    return caja;
+  }
+  (d.preguntas || []).forEach((p, i) => {
+    const valor = PREGUNTAS_MIND.respuestas[i] || '';
+    const campo = h('input', {
+      type: 'text', 'data-foco': `pregunta-${i}`, value: valor, placeholder: 'Tu respuesta (o déjala vacía)',
+      oninput: ev => { PREGUNTAS_MIND.respuestas[i] = ev.target.value; },
+    });
+    caja.appendChild(h('div', { clase: 'pregunta-mind' },
+      h('b', {}, p.pregunta), p.por_que ? h('small', { clase: 'meta' }, p.por_que) : null,
+      (p.opciones || []).length ? h('div', { clase: 'chips-mind' }, ...p.opciones.map(o => h('button', {
+        clase: 'mini', onclick: () => { PREGUNTAS_MIND.respuestas[i] = o; pintarLight(); },
+      }, o))) : null,
+      campo));
+  });
+  caja.appendChild(h('div', { clase: 'fila' },
+    h('button', { clase: 'mini fantasma', onclick: () => { PREGUNTAS_MIND.datos = null; pintarLight(); } }, 'Descartar'),
+    h('span', { clase: 'crece' }),
+    h('button', {
+      clase: 'primario', onclick: () => {
+        const lineas = (d.preguntas || []).map((p, i) => [p.pregunta, PREGUNTAS_MIND.respuestas[i]])
+          .filter(([, r]) => String(r || '').trim()).map(([pr, r]) => `- ${pr} ${String(r).trim()}`);
+        if (!lineas.length) { toast('contesta al menos una', true); return; }
+        e.indicaciones = [String(e.indicaciones || '').trim(), `Lo que ha aclarado el creador:\n${lineas.join('\n')}`]
+          .filter(Boolean).join('\n\n');
+        PREGUNTAS_MIND.datos = null;
+        toast('respuestas añadidas a las indicaciones');
+        pintarLight();
+      },
+    }, 'Añadir mis respuestas al encargo')));
+  return caja;
+}
+
 function shortsLight() { return (APP.light.datos || {}).shorts || { canales: [], recortes: [] }; }
 
 function esCanalShort(id) { return (shortsLight().canales || []).includes(id); }
@@ -6120,6 +6319,10 @@ function vistaGaleriaLight() {
   const zona = zonaLight();
   if (zona === 'inicio') return vistaInicioMind();
   if (zona === 'mind') return vistaMindZona();
+  if (zona === 'taller') return vistaTallerZona();
+  if (zona === 'competencia') return vistaCompetenciaZona();
+  if (zona === 'miniaturas') return vistaMiniaturasZona();
+  if (zona === 'publicar') return vistaPublicarZona();
   if (zona === 'todos') return vistaTodosMind();
   if (zona === 'ideas') return vistaIdeasZonaMind();
   if (zona === 'cola') return vistaColaMind();
@@ -6269,7 +6472,6 @@ function prepararShortDe(video, modo) {
  */
 const PESTANAS_ESTILO = [
   ['videos', 'Vídeos'], ['documentales', 'Documentales'], ['shorts', 'Shorts'],
-  ['taller', '🎭 Taller'], ['publicacion', '📣 Publicación'],
 ];
 
 function heroEstilo(ficha, extra) {
@@ -6329,7 +6531,11 @@ function vistaEstiloLight() {
     h('button', {
       title: 'Temas que encajan con este estilo y lo que funciona en su nicho',
       onclick: () => irALight('ideas', { estiloAbierto: ficha.id }),
-    }, '🧠 Estudio e ideas'))));
+    }, '🧠 Estudio e ideas'),
+    h('button', { title: 'Sus personajes, lugares y objetos fijos',
+      onclick: () => irASeccionConEstilo('taller', ficha.id) }, '🎭 Taller'),
+    h('button', { title: 'Sus cuentas y la publicación de sus vídeos',
+      onclick: () => irASeccionConEstilo('publicar', ficha.id) }, '📣 Publicar'))));
 
   if (!PESTANAS_ESTILO.some(([id]) => id === l.pestanaEstilo)) l.pestanaEstilo = 'videos';
   const tira = h('div', { clase: 'pestanas-estilo' });
@@ -7926,6 +8132,12 @@ function vistaElegidoLight() {
     campoArea('', e.indicaciones, v => { e.indicaciones = v; },
       'céntrate en el mecanismo, no en las personas; no fuerces una historia '
       + 'de personaje')));
+
+  /* MIND PREGUNTA LO QUE FALTA: 3-5 preguntas sobre el encargo (para quién es,
+     el gancho, qué dato falta...) y las respuestas van a las indicaciones. */
+  caja.appendChild(bloqueLight('Mind te pregunta',
+    'lo que falta para que el vídeo salga mejor (opcional, gratis)',
+    bloquePreguntasMind(e, ficha)));
 
   /* LAS LLAMADAS A LA ACCIÓN son de ESTE vídeo y se deciden aquí. No viajan en
      el estilo a propósito: si viajaran, elegir un estilo pisaría lo que acabas
