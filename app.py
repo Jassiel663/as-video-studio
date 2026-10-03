@@ -9903,6 +9903,86 @@ def borrar_trabajado(ident: str):
     return {"borrado": ident}
 
 
+@app.get("/api/avisos")
+def leer_avisos():
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return PASOS_MODULOS.avisos.listar()
+
+
+@app.post("/api/avisos/leidos")
+def avisos_leidos():
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    PASOS_MODULOS.avisos.marcar_leidos()
+    return {"ok": True}
+
+
+@app.get("/api/avisos/telegram")
+def estado_telegram():
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return PASOS_MODULOS.avisos.estado_telegram()
+
+
+@app.post("/api/avisos/telegram/{accion}")
+def accion_telegram(accion: str, cuerpo: dict = Body(default=None)):
+    """vincular | probar | ajustar {chat, estilos} | quitar {chat}"""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    av = PASOS_MODULOS.avisos
+    datos = _cuerpo(cuerpo)
+    try:
+        if accion == "vincular":
+            return {"nuevos": av.vincular(), **av.estado_telegram()}
+        if accion == "probar":
+            return av.probar()
+        if accion in ("ajustar", "quitar"):
+            av.ajustar_suscriptor(datos.get("chat"), datos.get("estilos") or [], quitar=accion == "quitar")
+            return av.estado_telegram()
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+    raise ErrorApi(404, f"accion desconocida: {accion}")
+
+
+@app.get("/api/piloto")
+def listar_piloto():
+    """El piloto automatico de cada estilo (los que tienen algo configurado)."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    piloto = PASOS_MODULOS.piloto
+    return {"pilotos": {d["estilo"]: dict(d, gastado_semana=piloto._gastado_semana(d), semana=piloto._semana())
+                        for d in (piloto.leer(p["id"])
+                                  for p in PASOS_MODULOS.presets_canal.listar()["presets"].get("canal", []))}}
+
+
+@app.put("/api/piloto/{estilo}")
+def configurar_piloto(estilo: str, cuerpo: dict = Body(default=None)):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    if not PASOS_MODULOS.presets_canal.leer(estilo):
+        raise ErrorApi(404, "ese estilo no existe")
+    try:
+        return PASOS_MODULOS.piloto.configurar(estilo, _cuerpo(cuerpo))
+    except (TypeError, ValueError) as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.post("/api/piloto/{estilo}/{accion}")
+def accion_piloto(estilo: str, accion: str):
+    """aprobar | cancelar | ahora"""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    piloto = PASOS_MODULOS.piloto
+    funciones = {"aprobar": piloto.aprobar, "cancelar": piloto.cancelar, "ahora": piloto.ahora}
+    if accion not in funciones:
+        raise ErrorApi(404, f"accion desconocida: {accion}")
+    try:
+        return funciones[accion](estilo)
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
 @app.get("/api/nichos")
 def listar_nichos():
     """Los estudios de nicho desde cero (pasos/nicho.py)."""
@@ -10702,6 +10782,13 @@ def main():
     # (pasos/mcp_estudio.py): el CLI arranca ese servidor como proceso hijo y
     # el hijo vuelve a hablar con este mismo proceso por HTTP.
     os.environ.setdefault("ESTUDIO_API", f"http://127.0.0.1:{argumentos.puerto}")
+
+    # LOS DOS RELOJES de fondo: el vigilante de avisos y el piloto automatico.
+    # Solo aqui (el servicio de verdad): importar app.py en una prueba no los
+    # arranca.
+    if PASOS_MODULOS is not None:
+        PASOS_MODULOS.avisos.arrancar()
+        PASOS_MODULOS.piloto.arrancar()
 
     import uvicorn
     print(f"Estudio de Video en http://{argumentos.host}:{argumentos.puerto}")

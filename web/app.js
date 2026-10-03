@@ -3009,6 +3009,12 @@ function seccionOtrasClaves(ficha) {
     + location.origin + '/api/publicar/facebook/vuelta'));
   fila(['facebook_id', 'Facebook — App ID', 'el «Identificador de la app» de Meta']);
   fila(['facebook_secreto', 'Facebook — Clave secreta', 'la «Clave secreta de la app» de Meta']);
+  // EL BOT DE LOS AVISOS (pasos/avisos.py): se crea gratis con @BotFather
+  caja.appendChild(h('h3', {}, 'Avisos'));
+  caja.appendChild(h('div', { clase: 'pista' },
+    'Para recibir los avisos en el móvil: en Telegram abre @BotFather, escribe /newbot y pega aquí el token que te da. '
+    + 'Después, en Producción › Avisos, cada persona se vincula.'));
+  fila(['telegram', 'Telegram — token del bot', 'el token que da @BotFather (números:letras)']);
   return caja;
 }
 
@@ -5415,6 +5421,8 @@ function marcaMind(clase) {
 }
 
 const ICONOS_MIND = {
+  piloto: 'M12 2l3 7h-6z M5 13l7-4 7 4-7 9z M12 9v13',
+  avisos: 'M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10 21h4',
   inicio: 'M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z',
   mind: 'M12 3l1.8 4.6L18.5 9.5l-4.7 1.9L12 16l-1.8-4.6L5.5 9.5l4.7-1.9z M18 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z',
   videos: 'M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-.5-1.5-.5-2.5 1-1.5 2-1.5H18a3 3 0 0 0 3-3c0-5-4-9-9-9z M7.5 11h.01 M10 7.5h.01 M14.5 7.5h.01',
@@ -5448,7 +5456,8 @@ const ZONAS_MIND = [
   { grupo: 'Investigar', zonas: [
     ['ideas', 'Ideas y nicho'], ['competencia', 'Competencia']] },
   { grupo: 'Producción', zonas: [
-    ['cola', 'Cola'], ['presupuesto', 'Presupuesto'], ['papelera', 'Papelera']] },
+    ['piloto', 'Piloto automático'], ['avisos', 'Avisos'], ['cola', 'Cola'],
+    ['presupuesto', 'Presupuesto'], ['papelera', 'Papelera']] },
 ];
 const TITULO_ZONA = Object.fromEntries(ZONAS_MIND.flatMap(g => g.zonas));
 
@@ -5498,7 +5507,11 @@ function pintarLateralLight() {
   const cuentas = {
     videos: presetsLight().filter(f => !esCanalShort(f.id)).length,
     cola: ((PANEL.datos || {}).activos || []).length,
+    avisos: (AVISOS.datos || {}).sin_leer || 0,
+    piloto: Object.values(PILOTO.datos || {}).filter(d => d.activo).length,
   };
+  cargarAvisos();
+  cargarPiloto();
   vaciar(lateral);
   lateral.appendChild(h('div', { clase: 'lateral-marca' }, marcaMind()));
   const nombre = ($('#cuenta-nombre') && $('#cuenta-nombre').textContent.trim()) || '';
@@ -6609,6 +6622,8 @@ function vistaGaleriaLight() {
   if (zona === 'mind') return vistaMindZona();
   if (zona === 'taller') return vistaTallerZona();
   if (zona === 'trabajado') return vistaTrabajadoZona();
+  if (zona === 'piloto') return vistaPilotoZona();
+  if (zona === 'avisos') return vistaAvisosZona();
   if (zona === 'competencia') return vistaCompetenciaZona();
   if (zona === 'miniaturas') return vistaMiniaturasZona();
   if (zona === 'publicar') return vistaPublicarZona();
@@ -14415,3 +14430,228 @@ function enLinea(texto) {
    access 'MODOS' before initialization» y deja la pantalla en blanco.
    Las funciones se izan; los const no. */
 arrancar();
+
+/* ============================================================ AVISOS
+ *
+ * La campana de la cabecera y la sección Avisos (pasos/avisos.py): lo que ha
+ * pasado en el estudio, y el bot de Telegram para recibirlo en el móvil.
+ */
+var AVISOS = { datos: null, ultima: 0, telegram: null };
+
+function cargarAvisos(forzar) {
+  if (!forzar && Date.now() - AVISOS.ultima < 60000) return;
+  AVISOS.ultima = Date.now();
+  pedir(`${BASE}/api/avisos`).then(d => {
+    AVISOS.datos = d || {};
+    pintarCampana();
+    if (APP.light.vista === 'galeria' && zonaLight() === 'avisos') pintarLight();
+  }).catch(() => { /* sin avisos */ });
+}
+
+function pintarCampana() {
+  const cab = $('#cabecera');
+  if (!cab) return;
+  let b = $('#btn-avisos');
+  if (!b) {
+    b = h('button', { id: 'btn-avisos', clase: 'mini fantasma', title: 'Avisos', onclick: () => irAZonaLight('avisos') });
+    const conf = $('#btn-config');
+    cab.insertBefore(b, conf || null);
+  }
+  vaciar(b);
+  b.appendChild(iconoNav('M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10 21h4'));
+  const n = (AVISOS.datos || {}).sin_leer || 0;
+  if (n) b.appendChild(h('span', { clase: 'punto-avisos' }, n > 9 ? '9+' : String(n)));
+}
+
+function vistaAvisosZona() {
+  // cada pintada vuelve aquí: pedir solo si hace rato (si no, bucle infinito)
+  if (Date.now() - AVISOS.ultima > 10000) cargarAvisos(true);
+  if (!AVISOS.telegram && !AVISOS.pidiendoTg) {
+    AVISOS.pidiendoTg = true;
+    pedir(`${BASE}/api/avisos/telegram`).then(d => { AVISOS.telegram = d || {}; pintarLight(); })
+      .catch(() => { AVISOS.telegram = {}; }).finally(() => { AVISOS.pidiendoTg = false; });
+  }
+  if ((AVISOS.datos || {}).sin_leer) {
+    AVISOS.datos.sin_leer = 0;
+    setTimeout(() => pedir(`${BASE}/api/avisos/leidos`, { method: 'POST' })
+      .then(() => pintarCampana()).catch(() => {}), 1500);
+  }
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Producción', 'Avisos',
+    'Lo que ha pasado en el estudio: vídeos terminados, fallos, saldo bajo y lo que el piloto automático necesita de ti.'));
+
+  const tg = AVISOS.telegram || {};
+  const telegram = h('section', { clase: 'bloque-shorts conexiones' },
+    h('div', { clase: 'light-cab' }, h('h2', {}, '📱 En el móvil (Telegram)'),
+      h('span', { clase: 'meta' }, tg.bot ? `bot @${tg.bot}` : 'sin bot todavía')));
+  if (!tg.listo) {
+    telegram.appendChild(h('ol', { clase: 'mejoras' },
+      h('li', {}, 'En Telegram, abre @BotFather, escribe /newbot y ponle un nombre (p. ej. «Mind Videos avisos»).'),
+      h('li', {}, 'Te da un token. Pégalo en ⚙ Configuración › Claves › Avisos.'),
+      h('li', {}, 'Vuelve aquí: aparecerá el bot y el botón para vincularte.')));
+    if (tg.error) telegram.appendChild(cajaError(tg.error));
+  } else {
+    telegram.appendChild(h('p', { clase: 'meta' },
+      `Cada persona que quiera avisos abre t.me/${tg.bot}, le escribe /start y después alguien pulsa «Vincular». `
+      + 'Cada uno puede quedarse solo con sus estilos.'));
+    (tg.suscriptores || []).forEach(s => {
+      const fila = h('div', { clase: 'fila conexion' }, h('b', {}, s.nombre),
+        h('span', { clase: 'crece meta' }, (s.estilos || []).length ? `solo ${s.estilos.length} estilo(s)` : 'todos los estilos'));
+      const sel = h('select', { multiple: true, title: 'Qué estilos le avisan (ninguno = todos)',
+        onchange: async ev => {
+          const elegidos = [...ev.target.selectedOptions].map(o => o.value);
+          AVISOS.telegram = await pedir(`${BASE}/api/avisos/telegram/ajustar`, { method: 'POST', cuerpo: { chat: s.chat, estilos: elegidos } });
+          pintarLight();
+        } }, presetsLight().map(p => h('option', { value: p.id, selected: (s.estilos || []).includes(p.id) }, p.nombre)));
+      fila.appendChild(sel);
+      fila.appendChild(h('button', { clase: 'mini fantasma peligro', onclick: async () => {
+        AVISOS.telegram = await pedir(`${BASE}/api/avisos/telegram/quitar`, { method: 'POST', cuerpo: { chat: s.chat } });
+        pintarLight();
+      } }, 'Quitar'));
+      telegram.appendChild(fila);
+    });
+    telegram.appendChild(h('div', { clase: 'fila' },
+      h('span', { clase: 'crece' }),
+      h('button', { onclick: async () => {
+        try { await pedir(`${BASE}/api/avisos/telegram/probar`, { method: 'POST' }); toast('aviso de prueba enviado'); cargarAvisos(true); }
+        catch (e) { toast(e.message, true); }
+      } }, 'Enviar prueba'),
+      h('button', { clase: 'primario', onclick: async () => {
+        try {
+          const d = await pedir(`${BASE}/api/avisos/telegram/vincular`, { method: 'POST' });
+          AVISOS.telegram = d;
+          toast((d.nuevos || []).length ? `vinculado: ${d.nuevos.join(', ')}` : 'nadie nuevo: escribe /start al bot primero');
+          pintarLight();
+        } catch (e) { toast(e.message, true); }
+      } }, 'Vincular')));
+  }
+  caja.appendChild(telegram);
+
+  const lista = (AVISOS.datos || {}).avisos || [];
+  caja.appendChild(cabeceraSeccion('Últimos avisos', lista.length ? '' : 'todavía ninguno'));
+  caja.appendChild(h('div', { clase: 'lista-cola' }, ...lista.map(a => h('div', { clase: 'fila-cola' + (a.leido ? '' : ' nuevo') },
+    h('div', { clase: 'crece' }, h('b', {}, a.titulo), a.texto ? h('small', {}, a.texto) : null),
+    h('small', { clase: 'meta' }, fechaCorta(a.fecha) || '')))));
+  return caja;
+}
+
+/* ===================================================== PILOTO AUTOMÁTICO
+ *
+ * Cada estilo produce y publica solo (pasos/piloto.py): cuántos vídeos y
+ * shorts a la semana, el presupuesto, si pide permiso antes de gastar y en
+ * qué redes publica.
+ */
+var PILOTO = { datos: null, editando: {}, ultima: 0 };
+
+function cargarPiloto(forzar) {
+  if (!forzar && Date.now() - PILOTO.ultima < 30000) return;
+  PILOTO.ultima = Date.now();
+  pedir(`${BASE}/api/piloto`).then(d => {
+    PILOTO.datos = (d || {}).pilotos || {};
+    if (APP.light.vista === 'galeria' && zonaLight() === 'piloto') pintarLight();
+  }).catch(() => { PILOTO.datos = {}; });
+}
+
+var FASES_PILOTO = {
+  idea: 'buscando la siguiente idea', crear: 'creando el vídeo', guion: 'escribiendo el guion',
+  dinero: 'calculando el coste', esperando_ok: '⏳ esperando tu aprobación', sin_presupuesto: 'sin presupuesto esta semana',
+  lanzar_voz: 'empezando la voz', voz: 'grabando la voz', lanzar_render: 'empezando las imágenes', render: 'imágenes y montaje',
+  publicar: 'preparando la publicación', seo: 'estudiando el momento y escribiendo textos', subir: 'publicando',
+};
+
+async function accionPiloto(estilo, accion) {
+  try {
+    await pedir(`${BASE}/api/piloto/${encodeURIComponent(estilo)}/${accion}`, { method: 'POST' });
+    toast({ aprobar: 'aprobado: sigue solo', cancelar: 'cancelado', ahora: 'empezando ya' }[accion]);
+    cargarPiloto(true);
+  } catch (e) { toast(e.message, true); }
+}
+
+function tarjetaPiloto(ficha) {
+  const d = (PILOTO.datos || {})[ficha.id] || {};
+  const ed = PILOTO.editando[ficha.id] || (PILOTO.editando[ficha.id] = JSON.parse(JSON.stringify({
+    activo: !!d.activo, videos_semana: d.videos_semana ?? 1, shorts_semana: d.shorts_semana ?? 2,
+    duracion_min: Math.round((d.duracion_s || 300) / 60), presupuesto_semana_usd: d.presupuesto_semana_usd ?? 10,
+    aprobacion: d.aprobacion || 'pedir', publicar: d.publicar || {}, privacidad: d.privacidad || 'public',
+    tiktok_modo: d.tiktok_modo || 'borrador', documental: !!d.documental, enfoque: d.enfoque || '' })));
+  const e = d.en_curso;
+  const num = (clave, min, max, paso) => h('input', { type: 'number', min: String(min), max: String(max), step: String(paso || 1),
+    value: String(ed[clave]), clase: 'duracion-num', oninput: ev => { ed[clave] = Number(ev.target.value); } });
+  const caja = h('section', { clase: 'bloque-shorts piloto' + (d.activo ? ' activo' : '') },
+    h('div', { clase: 'light-cab' },
+      ficha.hay_miniatura ? h('img', { clase: 'mini-estilo', src: API.presetCanalMiniatura(ficha.id, ficha.modificado), alt: '' }) : null,
+      h('h2', {}, ficha.nombre),
+      h('span', { clase: `sello-v ${d.activo ? 'ok' : ''}` }, d.activo ? 'ACTIVO' : 'apagado'),
+      h('span', { clase: 'crece' }),
+      h('span', { clase: 'meta' }, `gastado esta semana: ${Number(d.gastado_semana || 0).toFixed(2)} $ de ${Number(d.presupuesto_semana_usd || 0).toFixed(2)} $`)));
+  if (e) {
+    caja.appendChild(h('div', { clase: 'caja-info' },
+      h('b', {}, `${e.tipo === 'short' ? 'Short' : 'Vídeo'}${e.idea ? ` «${e.idea}»` : ''}: `),
+      FASES_PILOTO[e.fase] || e.fase, e.coste ? ` · ${Number(e.coste).toFixed(2)} $` : '',
+      h('div', { clase: 'fila', estilo: 'margin-top:8px' },
+        e.fase === 'esperando_ok' ? h('button', { clase: 'primario mini', onclick: () => accionPiloto(ficha.id, 'aprobar') }, `✓ Aprobar ${Number(e.coste || 0).toFixed(2)} $`) : null,
+        e.pid ? h('button', { clase: 'mini', onclick: () => abrirVideoLight(e.pid) }, 'Abrir el vídeo') : null,
+        h('button', { clase: 'mini fantasma peligro', onclick: () => { if (confirm('¿Cancelar lo que está haciendo el piloto?')) accionPiloto(ficha.id, 'cancelar'); } }, 'Cancelar'))));
+  }
+  if (d.ultimo_error) caja.appendChild(h('div', { clase: 'pista' }, `Último error: ${d.ultimo_error}`));
+  caja.appendChild(h('div', { clase: 'piloto-form' },
+    h('label', { clase: 'plano' }, h('input', { type: 'checkbox', checked: ed.activo, onchange: ev => { ed.activo = ev.target.checked; } }),
+      h('b', {}, 'Piloto automático encendido')),
+    h('div', { clase: 'fila' }, num('videos_semana', 0, 14), h('span', {}, 'vídeos/semana de'), num('duracion_min', 1, 30),
+      h('span', {}, 'min ·'), num('shorts_semana', 0, 21), h('span', {}, 'shorts/semana')),
+    h('div', { clase: 'fila' }, h('span', {}, 'Presupuesto máximo'), num('presupuesto_semana_usd', 0, 500, 1), h('span', {}, '$ a la semana')),
+    h('div', { clase: 'tira-modos' }, ...[['pedir', 'Pedirme permiso antes de gastar'], ['solo', 'Solo, dentro del presupuesto']]
+      .map(([id, t]) => h('button', { clase: 'mini' + (ed.aprobacion === id ? ' activo' : ''), onclick: () => { ed.aprobacion = id; pintarLight(); } }, t))),
+    h('div', { clase: 'fila casillas' }, h('span', {}, 'Publicar en:'),
+      ...['youtube', 'tiktok', 'facebook'].map(red => h('label', { clase: 'plano' },
+        h('input', { type: 'checkbox', checked: !!ed.publicar[red], onchange: ev => { ed.publicar[red] = ev.target.checked; } }),
+        h('span', {}, red === 'youtube' ? 'YouTube' : red === 'tiktok' ? 'TikTok' : 'Facebook')))),
+    h('div', { clase: 'fila' },
+      h('select', { onchange: ev => { ed.privacidad = ev.target.value; } },
+        [['public', 'YouTube: público'], ['unlisted', 'YouTube: oculto'], ['private', 'YouTube: privado']]
+          .map(([x, t]) => h('option', { value: x, selected: ed.privacidad === x }, t))),
+      h('select', { onchange: ev => { ed.tiktok_modo = ev.target.value; } },
+        [['borrador', 'TikTok: a borradores'], ['directo', 'TikTok: directo']]
+          .map(([x, t]) => h('option', { value: x, selected: ed.tiktok_modo === x }, t))),
+      h('label', { clase: 'plano' }, h('input', { type: 'checkbox', checked: ed.documental, onchange: ev => { ed.documental = ev.target.checked; } }),
+        h('span', {}, 'vídeos en modo documental'))),
+    h('input', { type: 'text', placeholder: 'Opcional: en qué centrarse («temas de dinero», «series de 3 partes»)',
+      value: ed.enfoque, 'data-foco': `piloto-enfoque-${ficha.id}`, oninput: ev => { ed.enfoque = ev.target.value; } }),
+    h('div', { clase: 'fila' },
+      !e ? h('button', { clase: 'mini', onclick: () => accionPiloto(ficha.id, 'ahora') }, '▶ Hacer uno ahora') : null,
+      h('span', { clase: 'crece' }),
+      h('button', { clase: 'primario', onclick: async () => {
+        try {
+          await pedir(`${BASE}/api/piloto/${encodeURIComponent(ficha.id)}`, { method: 'PUT', cuerpo: {
+            activo: ed.activo, videos_semana: ed.videos_semana, shorts_semana: ed.shorts_semana,
+            duracion_s: Math.round(ed.duracion_min * 60), presupuesto_semana_usd: ed.presupuesto_semana_usd,
+            aprobacion: ed.aprobacion, publicar: ed.publicar, privacidad: ed.privacidad,
+            tiktok_modo: ed.tiktok_modo, documental: ed.documental, enfoque: ed.enfoque } });
+          toast(ed.activo ? 'piloto guardado y encendido' : 'piloto guardado');
+          PILOTO.editando[ficha.id] = null;
+          cargarPiloto(true);
+        } catch (err) { toast(err.message, true); }
+      } }, 'Guardar'))));
+  const hechos = (d.hechos || []).slice(-5).reverse();
+  if (hechos.length) {
+    caja.appendChild(h('div', { clase: 'meta' }, 'Últimos: ' + hechos.map(x => `${x.tipo === 'short' ? '▯' : '▭'} ${x.idea}`).join(' · ')));
+  }
+  return caja;
+}
+
+function vistaPilotoZona() {
+  cargarPiloto();
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Producción', 'Piloto automático',
+    'Cada estilo produce y publica solo: ideas del estudio de nicho, vídeo completo, mini estudio del momento '
+    + 'y subida a sus cuentas. Nunca pasa del presupuesto semanal, y si quieres te pide permiso antes de cada gasto.'));
+  if (!PILOTO.datos) { caja.appendChild(h('div', { clase: 'cargando' }, 'cargando…')); return caja; }
+  presetsLight().forEach(f => caja.appendChild(tarjetaPiloto(f)));
+  return caja;
+}
+
+// mientras se mira el piloto y algo está en marcha, la fase se refresca sola
+setInterval(() => {
+  if (APP.light && APP.light.vista === 'galeria' && zonaLight() === 'piloto'
+      && Object.values(PILOTO.datos || {}).some(d => d.en_curso)) cargarPiloto(true);
+}, 20000);

@@ -121,6 +121,8 @@ def _vacio():
         "youtube_id": {"clave": ""},
         "youtube_secreto": {"clave": ""},
         # las apps de TikTok y de Meta (pasos/redes.py), igual que la de Google
+        # el bot de Telegram de los avisos (pasos/avisos.py)
+        "telegram": {"clave": ""},
         "tiktok_id": {"clave": ""},
         "tiktok_secreto": {"clave": ""},
         "facebook_id": {"clave": ""},
@@ -176,7 +178,7 @@ def _normalizar(datos):
 
     for suelta in ("jamendo", "freesound", "google", "fal", "pexels", "pixabay",
                    "youtube_id", "youtube_secreto", "tiktok_id", "tiktok_secreto",
-                   "facebook_id", "facebook_secreto"):
+                   "facebook_id", "facebook_secreto", "telegram"):
         cruda = datos.get(suelta)
         if isinstance(cruda, dict):
             base[suelta]["clave"] = str(cruda.get("clave") or "").strip()
@@ -269,7 +271,8 @@ def adoptar_env():
     datos["youtube_id"]["clave"] = valores.get("YOUTUBE_CLIENT_ID", "") or ""
     datos["youtube_secreto"]["clave"] = valores.get("YOUTUBE_CLIENT_SECRET", "") or ""
     for suelta, env in (("tiktok_id", "TIKTOK_CLIENT_KEY"), ("tiktok_secreto", "TIKTOK_CLIENT_SECRET"),
-                        ("facebook_id", "FACEBOOK_APP_ID"), ("facebook_secreto", "FACEBOOK_APP_SECRET")):
+                        ("facebook_id", "FACEBOOK_APP_ID"), ("facebook_secreto", "FACEBOOK_APP_SECRET"),
+                        ("telegram", "TELEGRAM_BOT_TOKEN")):
         datos[suelta]["clave"] = valores.get(env, "") or ""
     datos["pixabay"]["clave"] = valores.get("PIXABAY_API_KEY", "") or ""
     return datos
@@ -360,7 +363,7 @@ def _fusionar(actual, peticion):
     # el centinela en su lugar.
     for suelta in ("cartesia", "jamendo", "freesound", "google", "fal", "pexels",
                    "youtube_id", "youtube_secreto", "tiktok_id", "tiktok_secreto",
-                   "facebook_id", "facebook_secreto",
+                   "facebook_id", "facebook_secreto", "telegram",
                    "pixabay"):
         if suelta in peticion:
             ficha = peticion.get(suelta)
@@ -516,7 +519,8 @@ def espejar_env(datos=None):
     if datos["youtube_secreto"]["clave"]:
         nuestras["YOUTUBE_CLIENT_SECRET"] = datos["youtube_secreto"]["clave"]
     for suelta, env in (("tiktok_id", "TIKTOK_CLIENT_KEY"), ("tiktok_secreto", "TIKTOK_CLIENT_SECRET"),
-                        ("facebook_id", "FACEBOOK_APP_ID"), ("facebook_secreto", "FACEBOOK_APP_SECRET")):
+                        ("facebook_id", "FACEBOOK_APP_ID"), ("facebook_secreto", "FACEBOOK_APP_SECRET"),
+                        ("telegram", "TELEGRAM_BOT_TOKEN")):
         if datos[suelta]["clave"]:
             nuestras[env] = datos[suelta]["clave"]
     if datos["pixabay"]["clave"]:
@@ -529,7 +533,7 @@ def espejar_env(datos=None):
                    "GEMINI_API_KEY", "FAL_KEY", "PEXELS_API_KEY",
                    "PIXABAY_API_KEY", "YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET",
                    "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET", "FACEBOOK_APP_ID",
-                   "FACEBOOK_APP_SECRET"} | {
+                   "FACEBOOK_APP_SECRET", "TELEGRAM_BOT_TOKEN"} | {
         f"OPENAI_API_KEY_{i}" for i in range(2, MAX_OPENAI + 1)}
 
     lineas, puestas = [], set()
@@ -623,7 +627,7 @@ def resumen(datos=None):
             "cola": tapar(datos["youtube_secreto"]["clave"]),
         },
         **{suelta: {"puesta": bool(datos[suelta]["clave"]), "cola": tapar(datos[suelta]["clave"])}
-           for suelta in ("tiktok_id", "tiktok_secreto", "facebook_id", "facebook_secreto")},
+           for suelta in ("tiktok_id", "tiktok_secreto", "facebook_id", "facebook_secreto", "telegram")},
         "pixabay": {
             "puesta": bool(datos["pixabay"]["clave"]),
             "cola": tapar(datos["pixabay"]["clave"]),

@@ -3041,3 +3041,21 @@ a.boton.apagado { opacity: .5; }
   .burbuja-texto { display: none; }
   .burbuja-asistente { width: 48px; padding: 0; justify-content: center; }
 }
+
+/* ---------------------------------------------- avisos y piloto automático */
+#btn-avisos { position: relative; display: inline-flex; align-items: center; }
+#btn-avisos svg { width: 18px; height: 18px; }
+.punto-avisos {
+  position: absolute; top: -4px; right: -4px; min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: 9px; background: var(--acento); color: #fff; font-size: 10.5px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.lista-cola .fila-cola.nuevo { border-left: 3px solid var(--acento); }
+.lista-cola .fila-cola small { display: block; }
+.bloque-shorts.piloto.activo { border-color: var(--acento); }
+.bloque-shorts.piloto .mini-estilo { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+.piloto-form { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.piloto-form .fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.piloto-form .casillas label { margin-right: 6px; }
+.conexion select[multiple] { min-height: 64px; max-width: 220px; }
+.piloto-form input.duracion-num { width: 76px; }
