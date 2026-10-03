@@ -5432,6 +5432,7 @@ const ICONOS_MIND = {
   miniaturas: 'M3 5h18v14H3z M3 15l5-5 4 4 3-3 6 6 M15.5 8.5h.01',
   publicar: 'M4 12l16-8-6 16-3-7z M11 13l9-9',
   competencia: 'M3 17l6-6 4 4 8-8 M14 7h7v7',
+  trabajado: 'M7 3h10v18H7z M10 9l4 3-4 3z M4 7l2 1 M4 17l2-1 M20 7l-2 1 M20 17l-2-1',
   flecha: 'M9 6l6 6-6 6',
   mas: 'M12 5v14 M5 12h14',
   carpeta: 'M3 7h6l2 2h10v10H3z',
@@ -5442,7 +5443,8 @@ const ZONAS_MIND = [
     ['inicio', 'Inicio'], ['mind', 'Mind'], ['videos', 'Mis estilos'], ['todos', 'Vídeos'],
     ['shorts', 'Shorts'], ['documentales', 'Documentales']] },
   { grupo: 'Crear', zonas: [
-    ['taller', 'Taller'], ['miniaturas', 'Miniaturas'], ['publicar', 'Publicar']] },
+    ['trabajado', 'Short trabajado'], ['taller', 'Taller'], ['miniaturas', 'Miniaturas'],
+    ['publicar', 'Publicar']] },
   { grupo: 'Investigar', zonas: [
     ['ideas', 'Ideas y nicho'], ['competencia', 'Competencia']] },
   { grupo: 'Producción', zonas: [
@@ -6293,6 +6295,131 @@ function bloquePreguntasMind(e, estilo) {
   return caja;
 }
 
+
+/* ====================================================== SHORT TRABAJADO
+ *
+ * Subes TU vídeo corto y el estudio lo edita (pasos/trabajado.py): transcribe,
+ * se queda con lo bueno, monta en vertical con punch-in, limpia el audio, pone
+ * subtítulos con los colores del estilo y el gancho con la barra de progreso.
+ */
+const TRABAJADO = { lista: null, sondeo: null, subiendo: null,
+  form: { maximo: 60, encuadre: 'fondo', subtitulos: true, mejorar_audio: true, zooms: true, viral: true } };
+
+function cargarTrabajados(forzar) {
+  if (!forzar && TRABAJADO.lista) return;
+  pedir(`${BASE}/api/trabajados`).then(d => {
+    TRABAJADO.lista = (d || {}).trabajados || [];
+    clearTimeout(TRABAJADO.sondeo);
+    if (TRABAJADO.lista.some(t => t.estado === 'trabajando')) {
+      TRABAJADO.sondeo = setTimeout(() => {
+        if (APP.light.vista === 'galeria' && zonaLight() === 'trabajado') cargarTrabajados(true);
+      }, 4000);
+    }
+    if (APP.light.vista === 'galeria' && zonaLight() === 'trabajado') pintarLight();
+  }).catch(() => { TRABAJADO.lista = TRABAJADO.lista || []; });
+}
+
+function subirTrabajado(fichero) {
+  const f = TRABAJADO.form;
+  const datos = new FormData();
+  datos.append('archivo', fichero);
+  datos.append('nombre', f.nombre || '');
+  datos.append('estilo', f.estilo || '');
+  datos.append('maximo', String(f.maximo || 60));
+  datos.append('encuadre', f.encuadre || 'fondo');
+  ['subtitulos', 'mejorar_audio', 'zooms', 'viral'].forEach(k => datos.append(k, f[k] ? '1' : '0'));
+  datos.append('indicaciones', f.indicaciones || '');
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', `${BASE}/api/trabajados`);
+  xhr.upload.onprogress = ev => {
+    if (ev.lengthComputable) { TRABAJADO.subiendo = Math.round(100 * ev.loaded / ev.total); pintarLight(); }
+  };
+  xhr.onload = () => {
+    TRABAJADO.subiendo = null;
+    if (xhr.status >= 200 && xhr.status < 300) {
+      toast('vídeo subido: el estudio lo está editando (1-3 minutos)');
+      TRABAJADO.form.nombre = '';
+      cargarTrabajados(true);
+    } else {
+      let msg = xhr.statusText;
+      try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) { /* texto */ }
+      toast(`no se ha podido subir: ${msg}`, true);
+      pintarLight();
+    }
+  };
+  xhr.onerror = () => { TRABAJADO.subiendo = null; toast('se cortó la subida', true); pintarLight(); };
+  TRABAJADO.subiendo = 0;
+  pintarLight();
+  xhr.send(datos);
+}
+
+function vistaTrabajadoZona() {
+  cargarTrabajados();
+  const f = TRABAJADO.form;
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Crear', 'Short trabajado',
+    'Sube TU vídeo corto (grabado con el móvil, un clip…) y el estudio lo edita: se queda con lo '
+    + 'mejor, corta los silencios, monta en vertical con zooms, limpia el audio y pone subtítulos y '
+    + 'gancho. Gratis.'));
+  const casilla = (clave, texto) => h('label', { clase: 'plano' },
+    h('input', { type: 'checkbox', checked: !!f[clave], onchange: ev => { f[clave] = ev.target.checked; } }),
+    h('span', {}, texto));
+  const entrada = h('input', { type: 'file', accept: 'video/*', clase: 'oculto-archivo',
+    onchange: ev => { const x = ev.target.files && ev.target.files[0]; if (x) subirTrabajado(x); ev.target.value = ''; } });
+  const etiqueta = h('b', {}, `${f.maximo} s`);
+  caja.appendChild(h('section', { clase: 'bloque-shorts form-nicho' },
+    h('div', { clase: 'fila' },
+      h('input', { type: 'text', placeholder: 'Nombre (opcional)', value: f.nombre || '', 'data-foco': 'trab-nombre',
+        oninput: ev => { f.nombre = ev.target.value; } }),
+      h('select', { onchange: ev => { f.estilo = ev.target.value; }, value: f.estilo || '' },
+        [h('option', { value: '' }, 'Colores de los subtítulos: Mind (violeta)')]
+          .concat(presetsLight().map(p => h('option', { value: p.id }, `Estilo «${p.nombre}»`))))),
+    h('div', { clase: 'fila' }, h('span', {}, 'Duración máxima'),
+      h('input', { type: 'range', min: '15', max: '90', step: '5', value: String(f.maximo),
+        oninput: ev => { f.maximo = Number(ev.target.value); etiqueta.textContent = `${f.maximo} s`; } }), etiqueta),
+    h('div', { clase: 'tira-modos' },
+      ...[['fondo', 'Vídeo entero + fondo desenfocado'], ['centro', 'Pantalla completa']].map(([id, t]) => h('button', {
+        clase: 'mini' + (f.encuadre === id ? ' activo' : ''), onclick: () => { f.encuadre = id; pintarLight(); },
+      }, t))),
+    h('div', { clase: 'fila casillas' },
+      casilla('subtitulos', 'Subtítulos palabra a palabra'), casilla('mejorar_audio', 'Mejorar el audio'),
+      casilla('zooms', 'Zooms en los cortes'), casilla('viral', '⚡ Gancho y barra de progreso')),
+    h('input', { type: 'text', placeholder: 'Opcional: qué quieres («quédate con la parte del precio», «empieza por el final»)',
+      value: f.indicaciones || '', 'data-foco': 'trab-ind', oninput: ev => { f.indicaciones = ev.target.value; } }),
+    h('div', { clase: 'fila' }, h('span', { clase: 'crece' }),
+      TRABAJADO.subiendo !== null
+        ? h('span', { clase: 'meta' }, `subiendo… ${TRABAJADO.subiendo} %`)
+        : h('button', { clase: 'primario grande', onclick: () => entrada.click() }, '⬆ Subir mi vídeo y editarlo')),
+    entrada));
+
+  const lista = TRABAJADO.lista || [];
+  caja.appendChild(cabeceraSeccion('Tus shorts trabajados', lista.length ? `${lista.length}` : 'todavía ninguno'));
+  const rejilla = h('div', { clase: 'rejilla-videos verticales' });
+  lista.forEach(t => {
+    const url = `${BASE}/api/trabajados/${encodeURIComponent(t.id)}/video`;
+    const cara = t.estado === 'listo'
+      ? h('video', { src: url, controls: true, preload: 'metadata', playsinline: true })
+      : h('div', { clase: 'sin-cara' }, t.estado === 'error' ? '⚠' : `${Math.round((t.progreso || 0) * 100)} %`);
+    rejilla.appendChild(h('div', { clase: 'tarjeta-video trabajado' },
+      h('div', { clase: 'cara-v' }, cara),
+      h('div', { clase: 'cuerpo-v' },
+        h('div', { clase: 'nombre' }, t.titulo || t.nombre || 'Short'),
+        h('div', { clase: 'meta' }, t.estado === 'trabajando' ? (t.paso || 'trabajando…')
+          : t.estado === 'error' ? (t.error || 'falló')
+            : `${Math.round(t.duracion || 0)} s (de ${Math.round(t.original_s || 0)} s)`)),
+      h('div', { clase: 'acciones-v' },
+        t.estado === 'listo' ? h('a', { clase: 'boton mini primario', href: url, download: `${(t.titulo || 'short').slice(0, 50)}.mp4` }, '⬇ Descargar') : null,
+        h('span', { clase: 'crece' }),
+        h('button', { clase: 'mini fantasma peligro', onclick: async () => {
+          if (!confirm('¿Borrar este short y su original?')) return;
+          await pedir(`${BASE}/api/trabajados/${encodeURIComponent(t.id)}`, { method: 'DELETE' });
+          cargarTrabajados(true);
+        } }, 'Borrar'))));
+  });
+  if (lista.length) caja.appendChild(rejilla);
+  return caja;
+}
+
 function shortsLight() { return (APP.light.datos || {}).shorts || { canales: [], recortes: [] }; }
 
 function esCanalShort(id) { return (shortsLight().canales || []).includes(id); }
@@ -6348,6 +6475,7 @@ function vistaGaleriaLight() {
   if (zona === 'inicio') return vistaInicioMind();
   if (zona === 'mind') return vistaMindZona();
   if (zona === 'taller') return vistaTallerZona();
+  if (zona === 'trabajado') return vistaTrabajadoZona();
   if (zona === 'competencia') return vistaCompetenciaZona();
   if (zona === 'miniaturas') return vistaMiniaturasZona();
   if (zona === 'publicar') return vistaPublicarZona();

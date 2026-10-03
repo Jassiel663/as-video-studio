@@ -3017,6 +3017,10 @@ a.boton.apagado { opacity: .5; }
 .subida-yt { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid var(--linea-suave); }
 .subida-yt .fila { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
+.oculto-archivo { display: none; }
+.casillas { flex-wrap: wrap; gap: 14px !important; }
+.tarjeta-video.trabajado video { width: 100%; height: 100%; object-fit: contain; background: var(--negro); display: block; }
+
 /* ---- movil: el menu es un cajon */
 @media (max-width: 960px) {
   body { padding-left: 0; }

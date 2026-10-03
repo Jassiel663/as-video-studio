@@ -19,3 +19,5 @@ requests==2.34.2
 # Solo por el camino de la voz por websocket (pasos/p4_voz), pero sin el ese
 # camino falla en el momento de usarlo, no al arrancar: va aqui a proposito.
 websocket-client==1.9.0
+# El SHORT TRABAJADO (pasos/trabajado.py) transcribe palabra a palabra en local.
+faster-whisper==1.2.1

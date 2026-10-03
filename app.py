@@ -51,7 +51,7 @@ RAIZ_ESTUDIO = os.path.dirname(os.path.abspath(__file__))
 if RAIZ_ESTUDIO not in sys.path:
     sys.path.insert(0, RAIZ_ESTUDIO)
 
-from fastapi import Body, FastAPI, Query, Request  # noqa: E402
+from fastapi import Body, FastAPI, File, Form, Query, Request, UploadFile  # noqa: E402
 from fastapi.exceptions import RequestValidationError  # noqa: E402
 from fastapi.responses import (FileResponse, HTMLResponse,  # noqa: E402
                                JSONResponse, PlainTextResponse, Response,
@@ -9738,6 +9738,80 @@ def subir_a_red(pid: str, red: str, cuerpo: dict = Body(default=None)):
             publicar_en=str(datos.get("publicar_en") or ""))
     except ValueError as fallo:
         raise ErrorApi(400, str(fallo))
+
+
+@app.post("/api/trabajados")
+async def subir_short_trabajado(archivo: UploadFile = File(...), nombre: str = Form(default=""),
+                                estilo: str = Form(default=""), maximo: int = Form(default=60),
+                                encuadre: str = Form(default="fondo"), subtitulos: str = Form(default="1"),
+                                mejorar_audio: str = Form(default="1"), zooms: str = Form(default="1"),
+                                viral: str = Form(default="1"), indicaciones: str = Form(default="")):
+    """Sube TU video corto y el estudio lo edita (pasos/trabajado.py). Gratis."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    mod = PASOS_MODULOS.trabajado
+    ext = os.path.splitext(archivo.filename or "")[1].lower()
+    if ext not in (".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp"):
+        raise ErrorApi(400, "sube un video (mp4, mov, webm...)")
+    carpeta = os.path.join(mod.CARPETA, "_subidas")
+    os.makedirs(carpeta, exist_ok=True)
+    temporal = os.path.join(carpeta, f"{int(time.time() * 1000)}{ext}")
+    with open(temporal, "wb") as fh:
+        while True:
+            trozo = await archivo.read(4 * 1024 * 1024)
+            if not trozo:
+                break
+            fh.write(trozo)
+    si = lambda v: str(v).strip().lower() not in ("0", "false", "no", "")
+    try:
+        return mod.editar(temporal, nombre or os.path.splitext(archivo.filename or "")[0], estilo,
+                          maximo, encuadre if encuadre in ("fondo", "centro") else "fondo",
+                          si(subtitulos), si(mejorar_audio), si(zooms), si(viral), indicaciones)
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.get("/api/trabajados")
+def listar_trabajados():
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return {"trabajados": PASOS_MODULOS.trabajado.listar()}
+
+
+@app.get("/api/trabajados/{ident}")
+def leer_trabajado(ident: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = PASOS_MODULOS.trabajado.leer(ident)
+    if not datos:
+        raise ErrorApi(404, "ese short no existe")
+    return datos
+
+
+@app.get("/api/trabajados/{ident}/video")
+def video_trabajado(ident: str, original: int = Query(default=0)):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    mod = PASOS_MODULOS.trabajado
+    if original:
+        candidatos = [n for n in os.listdir(mod._ruta(ident)) if n.startswith("original")]             if os.path.isdir(mod._ruta(ident)) else []
+        ruta = mod._ruta(ident, candidatos[0]) if candidatos else ""
+    else:
+        ruta = mod._ruta(ident, "final.mp4")
+    if not ruta or not os.path.exists(ruta):
+        raise ErrorApi(404, "todavia no hay video")
+    return FileResponse(ruta, media_type="video/mp4", headers={"Cache-Control": "no-cache"})
+
+
+@app.delete("/api/trabajados/{ident}")
+def borrar_trabajado(ident: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    try:
+        PASOS_MODULOS.trabajado.borrar(ident)
+    except ValueError as fallo:
+        raise ErrorApi(404, str(fallo))
+    return {"borrado": ident}
 
 
 @app.get("/api/nichos")
