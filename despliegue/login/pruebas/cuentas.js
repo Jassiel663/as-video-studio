@@ -155,6 +155,13 @@ function navegador() {
     ok('y el admin puede verlos', r.estado === 200, r.estado);
     r = await yo.pedir('GET', `/api/admin/cuentas/${anaFicha.id}/videos/..%2F..%2Fsecretos`);
     ok('un id con trampa no sale', r.estado === 404, r.estado);
+    r = await yo.pedir('GET', `/api/admin/cuentas/${anaFicha.id}/actividad`);
+    const hoy = r.datos.gasto_dias && r.datos.gasto_dias[r.datos.gasto_dias.length - 1];
+    ok('actividad: 14 dias de gasto, el ultimo hoy', r.datos.gasto_dias.length === 14
+      && hoy.dia === new Date().toISOString().slice(0, 10) && typeof r.datos.estudio_responde === 'boolean', r.datos);
+    ok('el gasto aparece en su dia', r.datos.gasto_dias.some((d) => d.usd === 1.5), r.datos.gasto_dias);
+    r = await yo.pedir('GET', '/api/admin/moderacion');
+    ok('la revision va al estudio del admin (contesta o dice que no esta)', [200, 502].includes(r.estado), r.estado);
 
     console.log('-- suspender');
     await yo.token();

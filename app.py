@@ -10303,6 +10303,56 @@ def muestra_marca(estilo: str, que: str = Query(default="agua"), short: int = Qu
     raise ErrorApi(404, f"muestra desconocida: {que}")
 
 
+def _moderacion():
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    if CUENTA:
+        raise ErrorApi(403, "la revision del contenido es del admin")
+    return PASOS_MODULOS.moderacion
+
+
+@app.get("/api/moderacion")
+def leer_moderacion():
+    """Lo que la revision automatica ha marcado en las otras cuentas (pasos/moderacion.py)."""
+    return _moderacion().resumen()
+
+
+@app.post("/api/moderacion/revisar")
+def revisar_moderacion():
+    """Una pasada de revision ya, en segundo plano. Gratis."""
+    mod = _moderacion()
+    threading.Thread(target=lambda: mod.revisar(), daemon=True, name="moderacion-ya").start()
+    time.sleep(0.2)
+    return mod.resumen()
+
+
+@app.post("/api/moderacion/visto")
+def visto_moderacion(cuerpo: dict = Body(default=None)):
+    datos = _cuerpo(cuerpo)
+    try:
+        _moderacion().marcar_visto(str(datos.get("clave") or ""), datos.get("visto", True) is not False)
+    except ValueError as fallo:
+        raise ErrorApi(404, str(fallo))
+    return _moderacion().resumen()
+
+
+@app.post("/api/avisos/nuevo")
+def aviso_nuevo(cuerpo: dict = Body(default=None)):
+    """Un aviso que manda OTRO servicio (el acceso: «alguien se ha registrado»).
+    Solo en el estudio del admin: una cuenta no recibe avisos de la instalacion."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    if CUENTA:
+        raise ErrorApi(403, "solo el estudio del admin recibe estos avisos")
+    datos = _cuerpo(cuerpo)
+    titulo = str(datos.get("titulo") or "").strip()
+    if not titulo:
+        raise ErrorApi(400, "falta el titulo")
+    return PASOS_MODULOS.avisos.avisar(str(datos.get("tipo") or "cuenta")[:20], titulo[:200],
+                                       str(datos.get("texto") or "")[:1000], "",
+                                       str(datos.get("enlace") or "")[:300])
+
+
 @app.get("/api/avisos")
 def leer_avisos():
     if PASOS_MODULOS is None:
@@ -11190,6 +11240,7 @@ def main():
         PASOS_MODULOS.avisos.arrancar()
         PASOS_MODULOS.piloto.arrancar()
         PASOS_MODULOS.copias.arrancar()
+        PASOS_MODULOS.moderacion.arrancar()
 
     import uvicorn
     print(f"Estudio de Video en http://{argumentos.host}:{argumentos.puerto}")

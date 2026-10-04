@@ -14,6 +14,16 @@ const { verifyCsrf } = require('../lib/middleware');
 
 const router = express.Router();
 const TOPE_DEFECTO = Number(process.env.TOPE_DEFECTO_USD || 5);
+const ESTUDIO_ADMIN = `http://127.0.0.1:${cuentas.PUERTO_ADMIN}`;
+
+/** Un aviso en el estudio del admin (campana y Telegram). Nunca bloquea nada. */
+function avisarAdmin(titulo, texto) {
+  fetch(`${ESTUDIO_ADMIN}/api/avisos/nuevo`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tipo: 'cuenta', titulo, texto, enlace: config.appUrl ? `${config.appUrl}/admin` : '' }),
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => { /* sin estudio del admin: el panel lo enseña igual */ });
+}
 
 const registroLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -51,6 +61,8 @@ router.post('/registro', registroLimiter, verifyCsrf, async (req, res) => {
     const r = stmt.insertCuenta.run({ username: usuario, display_name: nombre, email: correo,
       password_hash: hash, tope_mes_usd: TOPE_DEFECTO });
     auditar(req, usuario, r.lastInsertRowid, 'registro');
+    avisarAdmin(`👤 Nueva cuenta pendiente: @${usuario}`,
+      `${nombre} (${correo}) quiere entrar. Apruébala o recházala en el Panel de admin.`);
   } catch (err) {
     console.error('[registro]', err.message);
     return res.status(500).json({ ok: false, error: 'No se ha podido crear la cuenta. Inténtalo de nuevo.' });
@@ -160,6 +172,50 @@ router.get('/admin/cuentas/:id/videos', requireAdmin, (req, res) => {
   const user = cuentaDe(req, res);
   if (!user) return undefined;
   return res.json({ ok: true, cuenta: ficha(user), videos: cuentas.videosDe(user), ocupado_mb: cuentas.ocupado(user) });
+});
+
+// LO QUE ESTA HACIENDO: sus trabajos (preguntados a SU estudio) y su gasto dia a dia.
+router.get('/admin/cuentas/:id/actividad', requireAdmin, async (req, res) => {
+  const user = cuentaDe(req, res);
+  if (!user) return undefined;
+  const r = await cuentas.aSuEstudio(user, 'GET', '/api/trabajos');
+  const trabajos = ((r && r.trabajos) || []).slice(-15).reverse().map((t) => ({
+    id: t.id, nombre: t.nombre, proyecto: t.proyecto, estado: t.estado,
+    progreso: t.progreso, mensaje: String(t.mensaje || '').slice(0, 140), creado: t.creado || t.inicio || '',
+  }));
+  return res.json({ ok: true, estudio_responde: !!r, trabajos, gasto_dias: cuentas.gastoPorDia(user, 14) });
+});
+
+router.post('/admin/cuentas/:id/trabajos/:tid/cancelar', requireAdmin, verifyCsrf, async (req, res) => {
+  const user = cuentaDe(req, res);
+  if (!user) return undefined;
+  if (!/^[A-Za-z0-9_-]{4,64}$/.test(req.params.tid)) return res.status(400).json({ ok: false, error: 'Trabajo no válido.' });
+  const r = await cuentas.aSuEstudio(user, 'POST', `/api/trabajos/${req.params.tid}/cancelar`);
+  if (!r) return res.status(502).json({ ok: false, error: 'Su estudio no contesta.' });
+  auditar(req, req.admin.username, req.admin.id, `admin_cancelar:${user.username}`);
+  return res.json({ ok: true, resultado: r });
+});
+
+// LA REVISION DEL CONTENIDO: la hace el estudio del admin (pasos/moderacion.py);
+// aqui solo se le pregunta y se le pasan las ordenes.
+async function alEstudioAdmin(metodo, ruta, cuerpo) {
+  const res = await fetch(`${ESTUDIO_ADMIN}${ruta}`, {
+    method: metodo, headers: { 'Content-Type': 'application/json' },
+    body: metodo === 'GET' ? undefined : JSON.stringify(cuerpo || {}), signal: AbortSignal.timeout(10000),
+  });
+  return res.json();
+}
+
+router.get('/admin/moderacion', requireAdmin, async (req, res) => {
+  try { return res.json(Object.assign({ ok: true }, await alEstudioAdmin('GET', '/api/moderacion'))); }
+  catch { return res.status(502).json({ ok: false, error: 'Tu estudio no contesta.' }); }
+});
+
+router.post('/admin/moderacion/:accion', requireAdmin, verifyCsrf, async (req, res) => {
+  const accion = req.params.accion;
+  if (!['revisar', 'visto'].includes(accion)) return res.status(404).json({ ok: false, error: 'Acción desconocida.' });
+  try { return res.json(Object.assign({ ok: true }, await alEstudioAdmin('POST', `/api/moderacion/${accion}`, req.body))); }
+  catch { return res.status(502).json({ ok: false, error: 'Tu estudio no contesta.' }); }
 });
 
 router.get('/admin/cuentas/:id/videos/:pid', requireAdmin, (req, res) => {

@@ -126,6 +126,43 @@ function gastoDelMes(user, mes) {
   return Math.round(total * 100) / 100;
 }
 
+/** El gasto de los ultimos `dias` dias, dia a dia. -> [{dia, usd}] (el mas antiguo primero) */
+function gastoPorDia(user, dias = 14) {
+  const hoy = new Date();
+  const salida = [];
+  const indice = {};
+  for (let k = dias - 1; k >= 0; k -= 1) {
+    const d = new Date(hoy.getTime() - k * 86400000).toISOString().slice(0, 10);
+    indice[d] = salida.length;
+    salida.push({ dia: d, usd: 0 });
+  }
+  try {
+    const texto = fs.readFileSync(path.join(datosDe(user), 'coste_global.jsonl'), 'utf8');
+    for (const linea of texto.split('\n')) {
+      if (!linea.trim()) continue;
+      try {
+        const d = JSON.parse(linea);
+        const dia = String(d.momento || '').slice(0, 10);
+        if (dia in indice) salida[indice[dia]].usd += Number(d.usd) || 0;
+      } catch { /* linea rota */ }
+    }
+  } catch { /* sin gasto */ }
+  return salida.map((x) => ({ dia: x.dia, usd: Math.round(x.usd * 100) / 100 }));
+}
+
+/** Pregunta a SU estudio (el proceso de la cuenta). -> json o null */
+async function aSuEstudio(user, metodo, ruta) {
+  const puerto = puertoDe(user);
+  if (!puerto) return null;
+  try {
+    const res = await fetch(`http://127.0.0.1:${puerto}${ruta}`, {
+      method: metodo, headers: { 'Content-Type': 'application/json' },
+      body: metodo === 'GET' ? undefined : '{}', signal: AbortSignal.timeout(8000),
+    });
+    return await res.json();
+  } catch { return null; }
+}
+
 /** Los videos de una cuenta, para el panel (moderar). */
 function videosDe(user) {
   const carpeta = path.join(datosDe(user), 'proyectos');
@@ -185,4 +222,5 @@ function ocupado(user) {
 module.exports = {
   PUERTO_ADMIN, PUERTO_BASE, RESERVADOS, CUENTAS, PETICIONES, FICHAS,
   puertoDe, validarRegistro, pedir, escribirFicha, datosDe, montada, gastoDelMes, videosDe, mp4De, ocupado,
+  gastoPorDia, aSuEstudio,
 };

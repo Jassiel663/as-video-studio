@@ -54,3 +54,20 @@ body { background: var(--bg); }
 .adm-tabla th { color: var(--text-muted); font-weight: 600; }
 .adm-tabla tr.fallo td { color: var(--danger); }
 @media (max-width: 600px) { .adm-cab { flex-wrap: wrap; } .adm h1 { font-size: 1.4rem; } }
+
+/* revision del contenido y actividad */
+.adm-moderacion { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; margin-bottom: 18px; }
+.adm-moderacion h2 { margin: 0 0 6px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.adm-marca { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--border); }
+.adm-marca.visto { opacity: 0.55; }
+.adm-marca small { display: block; color: var(--text-muted); }
+.adm-sello.grave { color: var(--danger); border-color: var(--danger); }
+.adm-sello.dudoso { color: #f5c451; border-color: #6b5520; }
+.adm-actividad { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+.adm-barras { display: flex; align-items: flex-end; gap: 4px; height: 70px; margin: 8px 0 4px; }
+.adm-barra { flex: 1; background: var(--gold); border-radius: 3px 3px 0 0; min-height: 2px; position: relative; }
+.adm-barra:hover::after { content: attr(data-t); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  background: var(--surface-hi); border: 1px solid var(--border); padding: 2px 6px; border-radius: 6px; font-size: 0.72rem; white-space: nowrap; }
+.adm-trabajo { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 0.84rem; border-bottom: 1px solid var(--border); }
+.adm-trabajo small { color: var(--text-muted); }
