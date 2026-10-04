@@ -217,6 +217,75 @@ def _t(segundos):
     return f"{int(s // 3600)}:{int(s % 3600 // 60):02d}:{s % 60:05.2f}"
 
 
+# ------------------------------------------------------------ los subtitulos
+#
+# DOS SUBTITULOS NUNCA A LA VEZ (04-10-2026: «se ven uno encima del otro»). El
+# final de una linea iba 0,15 s mas alla de su ultima palabra, y si la frase
+# siguiente arrancaba antes, libass tenia dos eventos vivos a la vez y los
+# APILABA, uno encima del otro. Ahora cada linea acaba como muy tarde cuando
+# empieza la siguiente (`sin_solapes`).
+#
+# Y LOS BLOQUES SE CORTAN POR CARACTERES ademas de por palabras: tres palabras
+# largas en mayusculas a ese tamano se salian por los lados del cuadro. Tambien
+# se corta en una pausa larga o en un punto, que es donde corta el oido.
+
+def bloques(palabras, por=3, max_chars=18, hueco=0.6):
+    """Las palabras en grupos para la pantalla. -> [[palabra, ...], ...]"""
+    salida, actual = [], []
+    for w in palabras:
+        if actual:
+            largo = sum(len(x["p"]) + 1 for x in actual) + len(w["p"])
+            pausa = w["i"] - actual[-1]["f"]
+            if len(actual) >= por or largo > max_chars or pausa > hueco \
+                    or actual[-1]["p"].rstrip().endswith((".", "?", "!", "…")):
+                salida.append(actual)
+                actual = []
+        actual.append(w)
+    if actual:
+        salida.append(actual)
+    return salida
+
+
+def sin_solapes(lineas, margen=0.02):
+    """[(inicio, fin, texto)] -> lo mismo, sin que una pise a la siguiente."""
+    lineas = sorted(lineas, key=lambda x: x[0])
+    salida = []
+    for k, (a, b, texto) in enumerate(lineas):
+        if k + 1 < len(lineas):
+            b = min(b, lineas[k + 1][0] - margen)
+        if b - a >= 0.04:
+            salida.append((a, b, texto))
+    return salida
+
+
+#: La TRANSICION entre bloques: el que entra aparece con un fundido y crece un
+#: poco; el que sale se funde. Dentro del bloque, solo cambia el color.
+ENTRA = r"{\fad(110,0)\fscx92\fscy92\t(0,120,\fscx100\fscy100)}"
+SALE = r"{\fad(0,90)}"
+
+
+def lineas_karaoke(palabras, acento_ass, por=3, max_chars=18, mayusculas=True, resaltar=True, extra_entrada="",
+                   normal_ass="&H00FFFFFF"):
+    """Una linea por palabra que suena (resaltada) dentro de su bloque, con
+    transicion al entrar y salir del bloque. -> [(inicio, fin, texto ass)]"""
+    pasar = (lambda t: t.upper()) if mayusculas else (lambda t: t)
+    lineas = []
+    for bloque in bloques(palabras, por, max_chars):
+        if not resaltar:
+            texto = " ".join(pasar(x["p"]) for x in bloque)
+            lineas.append((bloque[0]["i"], bloque[-1]["f"] + 0.25, ENTRA + extra_entrada + SALE + texto))
+            continue
+        for k, w in enumerate(bloque):
+            fin = bloque[k + 1]["i"] if k + 1 < len(bloque) else w["f"] + 0.25
+            # se vuelve al color normal y NO con {\r}: \r tambien deshace la
+            # animacion de entrada del bloque para las palabras que siguen
+            texto = " ".join((r"{\c" + acento_ass + r"&}" + pasar(x["p"]) + r"{\c" + normal_ass + r"&}")
+                             if j == k else pasar(x["p"]) for j, x in enumerate(bloque))
+            prefijo = (ENTRA + extra_entrada if k == 0 else "") + (SALE if k == len(bloque) - 1 else "")
+            lineas.append((w["i"], max(fin, w["i"] + 0.05), prefijo + texto))
+    return sin_solapes(lineas)
+
+
 def subtitulos_ass(palabras_nuevas, paleta, destino, por_bloque=3):
     """Subtitulos grandes de 2-3 palabras, la que suena en el color de acento."""
     fuente = os.path.splitext(os.path.basename(viral.fuente_negrita() or "Arial"))[0] or "Arial"
@@ -227,14 +296,9 @@ def subtitulos_ass(palabras_nuevas, paleta, destino, por_bloque=3):
            f"Style: Sub,{'Arial' if 'arial' in fuente.lower() else fuente},86,{_ass_color(paleta['texto'])},"
            f"{_ass_color(paleta['acento'])},{_ass_color(paleta['sombra'])},&H64000000,-1,0,0,0,100,100,0,0,1,7,3,2,70,70,560,1\n\n"
            "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
-    lineas = []
-    for n in range(0, len(palabras_nuevas), por_bloque):
-        bloque = palabras_nuevas[n:n + por_bloque]
-        for k, w in enumerate(bloque):
-            fin = bloque[k + 1]["i"] if k + 1 < len(bloque) else w["f"] + 0.15
-            texto = " ".join((r"{\c" + _ass_color(paleta["acento"]) + r"&}" + x["p"].upper() + r"{\r}")
-                             if j == k else x["p"].upper() for j, x in enumerate(bloque))
-            lineas.append(f"Dialogue: 0,{_t(w['i'])},{_t(max(fin, w['i'] + 0.05))},Sub,,0,0,0,,{texto}")
+    lineas = [f"Dialogue: 0,{_t(a)},{_t(b)},Sub,,0,0,0,,{texto}"
+              for a, b, texto in lineas_karaoke(palabras_nuevas, _ass_color(paleta["acento"]), por_bloque, 18,
+                                                normal_ass=_ass_color(paleta["texto"]))]
     with open(destino, "w", encoding="utf-8") as fh:
         fh.write(cab + "\n".join(lineas) + "\n")
     return destino

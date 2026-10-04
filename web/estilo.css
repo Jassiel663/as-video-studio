@@ -3102,3 +3102,6 @@ video.muestra-marca { width: 100%; max-width: 420px; border-radius: 10px; backgr
 /* el estudio de OTRA cuenta: lo de la instalacion (claves, configuracion) no se ve */
 body.cuenta-invitada #btn-config, body.cuenta-invitada .lateral-item.solo-admin { display: none !important; }
 a.lateral-item.panel-admin { text-decoration: none; color: var(--acento); }
+
+.programar-clip { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--linea-suave); display: flex; flex-direction: column; gap: 8px; }
+.programar-clip .fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

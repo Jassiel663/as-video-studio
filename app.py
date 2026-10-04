@@ -9995,11 +9995,13 @@ def subir_trabajado(ident: str, red: str, cuerpo: dict = Body(default=None)):
 async def crear_clipping(archivo: UploadFile = File(...), info: UploadFile = File(default=None),
                          nombre: str = Form(default=""), estilo: str = Form(default=""),
                          n: int = Form(default=3), min_s: int = Form(default=30), max_s: int = Form(default=60),
-                         estilo_sub: str = Form(default="pop"), encuadre: str = Form(default="fondo"),
+                         estilo_sub: str = Form(default="pop"), encuadre: str = Form(default="cara"),
                          subtitulos: str = Form(default="1"), viral: str = Form(default="1"),
                          mejorar_audio: str = Form(default="1"), zooms: str = Form(default="1"),
                          indicaciones: str = Form(default=""), permiso: str = Form(default="0"),
-                         url: str = Form(default="")):
+                         url: str = Form(default=""), musica: str = Form(default=""),
+                         efectos: str = Form(default="1"), barra: str = Form(default="0"),
+                         voz_contexto: str = Form(default="0"), ya_subtitulado: str = Form(default="0")):
     """Un video largo -> N clips de 30-60 s editados (pasos/clipping.py). Gratis.
     `info` es la ficha de YouTube (.info.json de yt-dlp), opcional."""
     if PASOS_MODULOS is None:
@@ -10008,6 +10010,11 @@ async def crear_clipping(archivo: UploadFile = File(...), info: UploadFile = Fil
     ext = os.path.splitext(archivo.filename or "")[1].lower()
     if ext not in (".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"):
         raise ErrorApi(400, "sube un video (mp4, webm, mkv...)")
+    # la frase de contexto con voz cuesta (poco): una cuenta pasada de su tope, no
+    if CUENTA and str(voz_contexto).strip().lower() in ("1", "true", "si", "on"):
+        tope = ficha_cuenta().get("tope_mes_usd")
+        if tope is not None and gastado_este_mes() >= float(tope):
+            raise ErrorApi(402, "Has llegado al límite de gasto de este mes: quita la frase con voz o habla con el administrador.")
     carpeta = os.path.join(mod.CARPETA, "_subidas")
     os.makedirs(carpeta, exist_ok=True)
     sello = int(time.time() * 1000)
@@ -10028,7 +10035,8 @@ async def crear_clipping(archivo: UploadFile = File(...), info: UploadFile = Fil
         return mod.crear(temporal, nombre or os.path.splitext(archivo.filename or "")[0], estilo, {
             "n": n, "min_s": min_s, "max_s": max_s, "estilo_sub": estilo_sub, "encuadre": encuadre,
             "subtitulos": subtitulos, "viral": viral, "mejorar_audio": mejorar_audio, "zooms": zooms,
-            "indicaciones": indicaciones}, ruta_info=ruta_info, permiso=si, url=url)
+            "indicaciones": indicaciones, "musica": musica, "efectos": efectos, "barra": barra,
+            "voz_contexto": voz_contexto, "ya_subtitulado": ya_subtitulado}, ruta_info=ruta_info, permiso=si, url=url)
     except ValueError as fallo:
         for ruta in (temporal, ruta_info):
             if ruta and os.path.exists(ruta):
@@ -10071,6 +10079,19 @@ def ajustar_clip(ident: str, n: int, cuerpo: dict = Body(default=None)):
     datos = _cuerpo(cuerpo)
     try:
         return PASOS_MODULOS.clipping.rehacer_clip(ident, n, datos.get("inicio"), datos.get("fin"))
+    except (TypeError, ValueError) as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.post("/api/clipping/{ident}/programar")
+def programar_clipping(ident: str, cuerpo: dict = Body(default=None)):
+    """Publica todos sus clips repartidos: {inicio (ISO UTC), cada_horas, redes, privacidad}."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = _cuerpo(cuerpo)
+    try:
+        return PASOS_MODULOS.clipping.programar(ident, str(datos.get("inicio") or ""), datos.get("cada_horas") or 24,
+                                                datos.get("redes") or {}, str(datos.get("privacidad") or "public"))
     except (TypeError, ValueError) as fallo:
         raise ErrorApi(400, str(fallo))
 

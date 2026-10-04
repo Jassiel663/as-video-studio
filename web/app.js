@@ -15145,10 +15145,16 @@ function vistaAppZona() {
  */
 var CLIPPING = {
   lista: null, abierto: '', subiendo: null, sondeo: null, video: null, info: null,
-  form: { n: 3, min_s: 30, max_s: 60, estilo: '', estilo_sub: 'pop', encuadre: 'fondo', subtitulos: true,
-          viral: true, mejorar_audio: true, zooms: true, indicaciones: '', permiso: false, url: '' },
+  form: { n: 3, min_s: 30, max_s: 60, estilo: '', estilo_sub: 'pop', encuadre: 'cara', subtitulos: true,
+          viral: true, mejorar_audio: true, zooms: true, indicaciones: '', permiso: false, url: '',
+          musica: 'motivacional', efectos: true, barra: false, voz_contexto: false, ya_subtitulado: false },
+  // varios videos a la vez: [{video, info}] (la ficha se empareja por el nombre)
+  lote: [], enCola: 0,
   ajuste: {}, clipPub: null,
 };
+var MUSICAS_CLIP = [['', 'Sin música'], ['motivacional', 'Motivacional'], ['epica', 'Épica'],
+  ['tension', 'Tensión'], ['alegre', 'Alegre'], ['lofi', 'Lo-fi tranquila'], ['misterio', 'Misterio'], ['emotiva', 'Emotiva']];
+var DURACIONES_CLIP = [['Cortos', 15, 30], ['Shorts / Reels', 30, 60], ['TikTok que paga (+1 min)', 61, 90]];
 var ESTILOS_SUB = [['pop', 'Pop (2 palabras, rebote)'], ['clasico', 'Clásico (3 palabras)'],
   ['caja', 'Caja (fondo detrás)'], ['minimal', 'Minimal (frase pequeña)']];
 
@@ -15157,7 +15163,7 @@ function cargarClipping(forzar) {
   pedir(`${BASE}/api/clipping`).then(d => {
     CLIPPING.lista = d.clipping || [];
     clearTimeout(CLIPPING.sondeo);
-    if (CLIPPING.lista.some(x => x.estado === 'trabajando')) CLIPPING.sondeo = setTimeout(() => cargarClipping(true), 4000);
+    if (CLIPPING.lista.some(x => x.estado === 'trabajando' || (x.programacion || {}).estado === 'trabajando')) CLIPPING.sondeo = setTimeout(() => cargarClipping(true), 4000);
     if (APP.light.vista === 'galeria' && zonaLight() === 'clipping') pintarLight();
   }).catch(e => { CLIPPING.lista = []; toast(e.message, true); });
 }
@@ -15174,15 +15180,32 @@ function aSegundos(texto) {
   return partes.reduce((a, n) => a * 60 + n, 0);
 }
 
+/* Varios videos a la vez: cada video con SU ficha (.info.json del mismo nombre),
+   y se suben de uno en uno -- el estudio los hace en orden. */
+function emparejarClipping(ficheros) {
+  const base = n => n.replace(/\.info\.json$/i, '').replace(/\.[^.]+$/, '');
+  const videos = ficheros.filter(x => !/\.json$/i.test(x.name));
+  const fichas = ficheros.filter(x => /\.json$/i.test(x.name));
+  CLIPPING.lote = videos.map(v => ({ video: v, info: fichas.find(i => base(i.name) === base(v.name)) || null }));
+}
+
 function subirClipping() {
   const f = CLIPPING.form;
-  if (!CLIPPING.video) { toast('elige primero el vídeo', true); return; }
+  if (!CLIPPING.lote.length) { toast('elige primero el vídeo', true); return; }
   if (!f.permiso) { toast('marca la casilla del permiso', true); return; }
+  CLIPPING.enCola = CLIPPING.lote.length;
+  subirUnoClipping();
+}
+
+function subirUnoClipping() {
+  const f = CLIPPING.form;
+  const item = CLIPPING.lote[0];
+  if (!item) { CLIPPING.enCola = 0; return; }
   const datos = new FormData();
-  datos.append('archivo', CLIPPING.video);
-  if (CLIPPING.info) datos.append('info', CLIPPING.info);
-  ['n', 'min_s', 'max_s', 'estilo', 'estilo_sub', 'encuadre', 'indicaciones', 'url'].forEach(k => datos.append(k, String(f[k] ?? '')));
-  ['subtitulos', 'viral', 'mejorar_audio', 'zooms', 'permiso'].forEach(k => datos.append(k, f[k] ? '1' : '0'));
+  datos.append('archivo', item.video);
+  if (item.info) datos.append('info', item.info);
+  ['n', 'min_s', 'max_s', 'estilo', 'estilo_sub', 'encuadre', 'indicaciones', 'url', 'musica'].forEach(k => datos.append(k, String(f[k] ?? '')));
+  ['subtitulos', 'viral', 'mejorar_audio', 'zooms', 'permiso', 'efectos', 'barra', 'voz_contexto', 'ya_subtitulado'].forEach(k => datos.append(k, f[k] ? '1' : '0'));
   const xhr = new XMLHttpRequest();
   xhr.open('POST', `${BASE}/api/clipping`);
   xhr.upload.onprogress = ev => {
@@ -15193,10 +15216,17 @@ function subirClipping() {
     if (xhr.status >= 200 && xhr.status < 300) {
       let r = {};
       try { r = JSON.parse(xhr.responseText); } catch (e) { /* nada */ }
-      toast('vídeo subido: escuchándolo y buscando los mejores momentos');
-      CLIPPING.video = null; CLIPPING.info = null; f.url = '';
-      CLIPPING.abierto = r.id || '';
+      CLIPPING.lote.shift();
+      CLIPPING.abierto = CLIPPING.abierto || r.id || '';
+      f.url = '';
       cargarClipping(true);
+      if (CLIPPING.lote.length) {
+        toast(`subido: quedan ${CLIPPING.lote.length}`);
+        subirUnoClipping();
+      } else {
+        toast(CLIPPING.enCola > 1 ? `${CLIPPING.enCola} vídeos subidos: se hacen en orden` : 'vídeo subido: escuchándolo y buscando los mejores momentos');
+        CLIPPING.enCola = 0;
+      }
     } else {
       let msg = xhr.statusText;
       try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) { /* texto */ }
@@ -15217,9 +15247,7 @@ function formularioClipping() {
     h('span', {}, texto));
   const elegirVideo = h('input', { type: 'file', accept: 'video/*,.mkv,.webm', clase: 'oculto-archivo', multiple: true,
     onchange: ev => {
-      [...(ev.target.files || [])].forEach(x => {
-        if (/\.json$/i.test(x.name)) CLIPPING.info = x; else CLIPPING.video = x;
-      });
+      emparejarClipping([...(ev.target.files || [])]);
       ev.target.value = '';
       pintarLight();
     } });
@@ -15232,15 +15260,22 @@ function formularioClipping() {
       + 'qué partes son las más repetidas y qué minutos cita la gente en los comentarios.'),
     h('div', { clase: 'fila' },
       h('button', { clase: 'primario', onclick: () => elegirVideo.click() },
-        CLIPPING.video ? '🎬 Cambiar archivos' : '🎬 Elegir vídeo (y su ficha .info.json)'),
-      h('span', { clase: 'crece meta' }, CLIPPING.video
-        ? `${CLIPPING.video.name} · ${(CLIPPING.video.size / 1e6).toFixed(0)} MB` + (CLIPPING.info ? ' + ficha ✅' : ' (sin ficha: solo por lo que se dice)')
-        : 'Puedes elegir los dos a la vez.'), elegirVideo),
+        CLIPPING.lote.length ? '🎬 Cambiar archivos' : '🎬 Elegir vídeos (y sus fichas .info.json)'),
+      h('span', { clase: 'crece meta' }, CLIPPING.lote.length
+        ? (CLIPPING.lote.length === 1
+          ? `${CLIPPING.lote[0].video.name} · ${(CLIPPING.lote[0].video.size / 1e6).toFixed(0)} MB`
+            + (CLIPPING.lote[0].info ? ' + ficha ✅' : ' (sin ficha: solo por lo que se dice)')
+          : `${CLIPPING.lote.length} vídeos (${CLIPPING.lote.filter(x => x.info).length} con ficha)`)
+        : 'Puedes elegir varios vídeos con sus fichas a la vez.'), elegirVideo),
     h('input', { type: 'text', placeholder: 'Enlace del vídeo de YouTube (opcional, para tenerlo apuntado)',
       value: f.url, 'data-foco': 'clip-url', oninput: ev => { f.url = ev.target.value; } }),
     h('div', { clase: 'fila' }, h('span', {}, 'Cuántos clips'),
       h('input', { type: 'range', min: '1', max: '10', step: '1', value: String(f.n),
         oninput: ev => { f.n = Number(ev.target.value); cantidad.textContent = String(f.n); } }), cantidad),
+    h('div', { clase: 'tira-modos' }, ...DURACIONES_CLIP.map(([t, a, b]) => h('button', {
+      clase: 'mini' + (f.min_s === a && f.max_s === b ? ' activo' : ''),
+      onclick: () => { f.min_s = a; f.max_s = b; pintarLight(); },
+    }, `${t} · ${a}-${b} s`))),
     h('div', { clase: 'fila' }, h('span', {}, 'Duración de cada clip'),
       h('input', { type: 'number', min: '10', max: '90', value: String(f.min_s), clase: 'duracion-num',
         oninput: ev => { f.min_s = Number(ev.target.value); } }), h('span', {}, 'a'),
@@ -15253,11 +15288,22 @@ function formularioClipping() {
       h('select', { onchange: ev => { f.estilo_sub = ev.target.value; } },
         ESTILOS_SUB.map(([id, t]) => h('option', { value: id, selected: f.estilo_sub === id }, `Subtítulos: ${t}`)))),
     h('div', { clase: 'tira-modos' },
-      ...[['fondo', 'Vídeo entero + fondo desenfocado'], ['centro', 'Pantalla completa (recorta los lados)']].map(([id, t]) =>
+      ...[['cara', '🎯 Sigue la cara'], ['fondo', 'Vídeo entero + fondo desenfocado'], ['centro', 'Recorta el centro']].map(([id, t]) =>
         h('button', { clase: 'mini' + (f.encuadre === id ? ' activo' : ''), onclick: () => { f.encuadre = id; pintarLight(); } }, t))),
     h('div', { clase: 'fila casillas' },
-      casilla('subtitulos', 'Subtítulos'), casilla('viral', '⚡ Gancho y barra de progreso'),
-      casilla('zooms', 'Zooms cada pocos segundos'), casilla('mejorar_audio', 'Mejorar el audio')),
+      casilla('subtitulos', 'Subtítulos'), casilla('viral', '⚡ Texto gancho al empezar'),
+      casilla('zooms', 'Zooms cada pocos segundos'), casilla('mejorar_audio', 'Mejorar el audio'),
+      casilla('efectos', '💨 Efectos en los cortes'), casilla('barra', 'Barra de progreso arriba'),
+      casilla('ya_subtitulado', '📝 El vídeo ya trae subtítulos (no poner los nuestros)')),
+    h('label', { clase: 'plano permiso-clip' },
+      h('input', { type: 'checkbox', checked: !!f.voz_contexto, onchange: ev => { f.voz_contexto = ev.target.checked; pintarLight(); } }),
+      h('span', {}, h('b', {}, '🎙 Frase de contexto con voz IA al empezar '),
+        `(«Este empresario explica por qué…»). Hace el clip tuyo a ojos de YouTube, que no paga lo reutilizado. `
+        + `De pago, muy poco: ~0,01 $ por clip (${f.n} clip${f.n === 1 ? '' : 's'} ≈ ${(0.01 * f.n).toFixed(2)} $).`)),
+    h('div', { clase: 'fila' }, h('span', {}, '🎵 Música de fondo'),
+      h('select', { onchange: ev => { f.musica = ev.target.value; } },
+        MUSICAS_CLIP.map(([id, t]) => h('option', { value: id, selected: f.musica === id }, t))),
+      h('span', { clase: 'meta' }, 'se baja sola cuando hablan; se eligen temas de uso comercial')),
     h('input', { type: 'text', placeholder: 'Opcional: qué buscar («las partes graciosas», «lo que dice de dinero»)',
       value: f.indicaciones, 'data-foco': 'clip-ind', oninput: ev => { f.indicaciones = ev.target.value; } }),
     h('label', { clase: 'plano permiso-clip' },
@@ -15267,8 +15313,9 @@ function formularioClipping() {
     h('div', { clase: 'fila' }, h('span', { clase: 'crece meta' }, 'Gratis: no usa imágenes ni voz de pago.'),
       CLIPPING.subiendo !== null
         ? h('span', { clase: 'meta' }, `subiendo… ${CLIPPING.subiendo} %`)
-        : h('button', { clase: 'primario grande', disabled: !CLIPPING.video || !f.permiso, onclick: subirClipping },
-          `✂ Hacer ${f.n} clip${f.n === 1 ? '' : 's'}`)));
+        : h('button', { clase: 'primario grande', disabled: !CLIPPING.lote.length || !f.permiso, onclick: subirClipping },
+          CLIPPING.lote.length > 1 ? `✂ Hacer ${f.n} clips de cada uno (${CLIPPING.lote.length} vídeos)`
+            : `✂ Hacer ${f.n} clip${f.n === 1 ? '' : 's'}`)));
   return caja;
 }
 
@@ -15285,6 +15332,8 @@ function tarjetaClip(job, c) {
       h('div', { clase: 'meta' }, `${mmss(c.inicio)} → ${mmss(c.fin)} · ${Math.round(c.fin - c.inicio)} s · ⭐ ${c.puntuacion || '?'}/10`),
       c.porque ? h('div', { clase: 'meta porque-clip' }, c.porque) : null,
       (c.hashtags || []).length ? h('div', { clase: 'meta' }, c.hashtags.join(' ')) : null,
+      c.musica ? h('div', { clase: 'meta' }, `🎵 ${c.musica.titulo} · ${c.musica.artista}`
+        + (c.musica.comercial ? '' : ' (licencia no comercial: no la uses para monetizar)')) : null,
       c.estado === 'error' ? h('div', { clase: 'meta error-cola' }, c.error || 'falló') : null),
     h('div', { clase: 'acciones-v' },
       c.estado === 'listo' ? h('button', { clase: 'mini primario', onclick: async () => {
@@ -15317,6 +15366,58 @@ function tarjetaClip(job, c) {
       } }, 'Re-editar (gratis)')));
   }
   return tarjeta;
+}
+
+/* PUBLICAR TODOS LOS CLIPS, REPARTIDOS (clipping.programar). La hora se
+   escribe en la del navegador y viaja en UTC. */
+var PROGRAMAR_CLIP = {};
+
+function panelProgramarClipping(job) {
+  const listos = (job.clips || []).filter(c => c.estado === 'listo').length;
+  const p = job.programacion;
+  const caja = h('div', { clase: 'programar-clip' }, h('b', {}, '📅 Publicar todos repartidos'));
+  if (p && p.items) {
+    const enviados = p.items.filter(i => i.estado === 'enviado').length;
+    const errores = p.items.filter(i => i.estado === 'error');
+    caja.appendChild(h('div', { clase: 'meta' }, p.estado === 'trabajando'
+      ? `preparando textos y subiendo… ${enviados} de ${p.items.length}`
+      : `${enviados} publicaciones enviadas` + (errores.length ? `, ${errores.length} con error: ${errores[0].error}` : '')
+        + (p.items.some(i => i.red === 'tiktok') ? ' · TikTok quedó en borradores: publícalos desde la app.' : '')));
+    if (p.estado === 'trabajando') return caja;
+  }
+  if (!job.estilo) {
+    caja.appendChild(h('div', { clase: 'meta' }, 'Para publicar, el clipping tiene que hacerse con un estilo (sus cuentas).'));
+    return caja;
+  }
+  const o = PROGRAMAR_CLIP[job.id] || (PROGRAMAR_CLIP[job.id] = (() => {
+    const d = new Date(Date.now() + 86400000);
+    d.setHours(18, 0, 0, 0);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    return { cuando: local, cada: 24, youtube: true, tiktok: true, facebook: false };
+  })());
+  const marca = (red, t) => h('label', { clase: 'plano' },
+    h('input', { type: 'checkbox', checked: !!o[red], onchange: ev => { o[red] = ev.target.checked; } }), h('span', {}, t));
+  caja.appendChild(h('div', { clase: 'fila' },
+    h('span', {}, 'El primero'), h('input', { type: 'datetime-local', value: o.cuando, oninput: ev => { o.cuando = ev.target.value; } }),
+    h('span', {}, 'y luego uno cada'),
+    h('select', { onchange: ev => { o.cada = Number(ev.target.value); } },
+      [[24, '24 h'], [12, '12 h'], [8, '8 h'], [6, '6 h'], [4, '4 h']].map(([v, t]) => h('option', { value: v, selected: o.cada === v }, t)))));
+  caja.appendChild(h('div', { clase: 'fila casillas' },
+    marca('youtube', 'YouTube Shorts'), marca('tiktok', 'TikTok (a borradores)'), marca('facebook', 'Facebook Reels'),
+    h('span', { clase: 'crece' }),
+    h('button', { clase: 'primario', disabled: !listos, onclick: async () => {
+      if (!o.cuando) { toast('elige el día y la hora del primero', true); return; }
+      if (!confirm(`¿Publicar los ${listos} clips en las cuentas del estilo, uno cada ${o.cada} h desde el ${o.cuando.replace('T', ' ')}?`)) return;
+      try {
+        await pedir(`${BASE}/api/clipping/${encodeURIComponent(job.id)}/programar`, { method: 'POST', cuerpo: {
+          inicio: new Date(o.cuando).toISOString(), cada_horas: o.cada,
+          redes: { youtube: o.youtube, tiktok: o.tiktok, facebook: o.facebook }, privacidad: 'public' } });
+        toast('preparando los textos y subiendo: tarda unos minutos');
+        cargarClipping(true);
+        setTimeout(() => cargarClipping(true), 8000);
+      } catch (e) { toast(e.message, true); }
+    } }, `📅 Programar ${listos} clips`)));
+  return caja;
 }
 
 function vistaClippingZona() {
@@ -15353,6 +15454,7 @@ function vistaClippingZona() {
       const rejilla = h('div', { clase: 'rejilla-videos verticales' });
       job.clips.forEach(c => rejilla.appendChild(tarjetaClip(job, c)));
       bloque.appendChild(rejilla);
+      if (job.estado === 'listo') bloque.appendChild(panelProgramarClipping(job));
     }
     caja.appendChild(bloque);
   });

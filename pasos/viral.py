@@ -54,6 +54,10 @@ PARAMS = {
 
 #: El color de la barra: el violeta de Mind.
 COLOR_BARRA = "0xA78BFA"
+#: LA BARRA DE PROGRESO, APAGADA DE FABRICA (04-10-2026: «arriba del video
+#: aparece una linea morada corriendo, quiero quitarla»). Se enciende por video
+#: con `barra=True` (la casilla «Barra de progreso» de la pantalla).
+BARRA_POR_DEFECTO = str(os.environ.get("ESTUDIO_BARRA_VIRAL", "")).strip().lower() in ("1", "true", "si")
 SEGUNDOS_GANCHO = 2.2
 
 INSTRUCCION_GANCHO = """Escribe el TEXTO GANCHO que va en grande en pantalla \
@@ -107,7 +111,7 @@ def _partir(texto, por_linea=14):
     return "\n".join(lineas[:3])
 
 
-def pulir(entrada, salida, gancho="", segundos_gancho=SEGUNDOS_GANCHO):
+def pulir(entrada, salida, gancho="", segundos_gancho=SEGUNDOS_GANCHO, barra=None):
     """El MP4 con la barra de progreso y el texto gancho encima. -> salida"""
     duracion = medios.duracion_media(entrada) or 0
     if duracion <= 0:
@@ -120,9 +124,14 @@ def pulir(entrada, salida, gancho="", segundos_gancho=SEGUNDOS_GANCHO):
         ancho, alto = [int(x) for x in sonda.stdout.strip().split("x")[:2]]
     except ValueError:
         ancho, alto = 1080, 1920
-    barra = max(6, int(alto * 0.007))
-    filtros = [f"color=c={COLOR_BARRA}:s={ancho}x{barra}:r=30[barra]",
-               f"[0:v][barra]overlay=x='-w+W*t/{duracion:.3f}':y=0:shortest=1[v1]"]
+    if barra is None:
+        barra = BARRA_POR_DEFECTO
+    if barra:
+        alto_barra = max(6, int(alto * 0.007))
+        filtros = [f"color=c={COLOR_BARRA}:s={ancho}x{alto_barra}:r=30[barra]",
+                   f"[0:v][barra]overlay=x='-w+W*t/{duracion:.3f}':y=0:shortest=1[v1]"]
+    else:
+        filtros = ["[0:v]null[v1]"]
     fichero_texto = ""
     fuente = fuente_negrita()
     if gancho and fuente:
@@ -153,10 +162,10 @@ def pulir(entrada, salida, gancho="", segundos_gancho=SEGUNDOS_GANCHO):
     return salida
 
 
-def pulir_en_sitio(mp4, gancho=""):
+def pulir_en_sitio(mp4, gancho="", barra=None):
     """Como `pulir`, sustituyendo el fichero (a traves de un temporal)."""
     base, ext = os.path.splitext(mp4)
     temporal = f"{base}.viral{ext}"
-    pulir(mp4, temporal, gancho)
+    pulir(mp4, temporal, gancho, barra=barra)
     os.replace(temporal, mp4)
     return mp4

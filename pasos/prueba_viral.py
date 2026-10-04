@@ -63,7 +63,7 @@ try:
                     "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", entrada],
                    check=True)
     salida = os.path.join(TEMPORAL, "out.mp4")
-    viral.pulir(entrada, salida, "NADIE TE CUENTA ESTO")
+    viral.pulir(entrada, salida, "NADIE TE CUENTA ESTO", barra=True)
     comprobar("sale el fichero", os.path.exists(salida))
     comprobar("con la misma duracion", abs(medios.duracion_media(salida) - medios.duracion_media(entrada)) < 0.15)
     audio = subprocess.run([medios.ffprobe(), "-v", "error", "-select_streams", "a",
@@ -84,6 +84,14 @@ try:
     r, g, b = final.getpixel((520, 2))
     comprobar("al final la barra esta casi llena (violeta en la esquina derecha)",
               b > 200 and r > 120, (r, g, b))
+    sin_barra = os.path.join(TEMPORAL, "sin_barra.mp4")
+    viral.pulir(entrada, sin_barra, "NADIE TE CUENTA ESTO")
+    ruta_sb = os.path.join(TEMPORAL, "c.png")
+    subprocess.run([medios.ffmpeg(), "-y", "-loglevel", "error", "-ss", "3.9", "-i", sin_barra,
+                    "-frames:v", "1", ruta_sb], check=True)
+    from PIL import Image
+    r2, g2, b2 = Image.open(ruta_sb).convert("RGB").getpixel((520, 2))
+    comprobar("de fabrica SIN la barra morada de arriba", b2 < 80 and r2 < 80, (r2, g2, b2))
     comprobar("y el gancho ya no esta", not any(max(final.getpixel((x, y))[0] for x in range(0, 540, 4)) > 200
                                                 for y in range(150, 330, 3)))
 finally:

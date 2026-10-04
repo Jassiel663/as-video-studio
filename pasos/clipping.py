@@ -38,9 +38,10 @@ import time
 import uuid
 
 try:
-    from . import cli_claude, marca, medios, presets_canal, trabajado, viral
+    from . import cli_claude, fondo, marca, medios, presets_canal, trabajado, viral
 except ImportError:  # ejecutado con la carpeta pasos directamente en sys.path
     import cli_claude
+    import fondo
     import marca
     import medios
     import presets_canal
@@ -81,7 +82,8 @@ TRANSCRIPCION ([segundo] frase):
 Contesta SOLO este JSON (los segundos, numeros; idioma de los textos = el del video):
 {{"clips": [{{"inicio": 0.0, "fin": 0.0, "titulo": "<titulo corto y potente>", \
 "gancho": "<texto en pantalla de 2-5 palabras, MAYUSCULAS>", "porque": "<por que funciona, \
-1 frase>", "puntuacion": 1-10, "hashtags": ["#..."]}}]}}
+1 frase>", "puntuacion": 1-10, "hashtags": ["#..."], "contexto": "<frase de 8-16 palabras que presenta el \
+clip para quien no conoce el video: quien habla y por que importa, sin destripar el final>"}}]}}
 """
 
 
@@ -202,7 +204,8 @@ def _elegir_claude(palabras, sen, n, min_s, max_s, indicaciones=""):
                           "titulo": str(c.get("titulo") or "")[:100], "gancho": str(c.get("gancho") or "")[:60],
                           "porque": str(c.get("porque") or "")[:300],
                           "puntuacion": max(1, min(10, int(float(c.get("puntuacion") or 5)))),
-                          "hashtags": [str(h)[:40] for h in (c.get("hashtags") or [])][:8]})
+                          "hashtags": [str(h)[:40] for h in (c.get("hashtags") or [])][:8],
+                          "contexto": str(c.get("contexto") or "")[:160]})
         except (KeyError, TypeError, ValueError):
             continue
     return clips
@@ -323,23 +326,14 @@ def _ass(palabras, paleta, destino, estilo):
            f"{color(paleta['sombra']) if caja == 1 else fondo},{fondo},{-1 if estilo != 'minimal' else 0},0,0,0,"
            f"100,100,0,0,{caja},{borde},{3 if estilo != 'caja' else 0},2,70,70,560,1\n\n"
            "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
-    lineas = []
-    for n in range(0, len(palabras), por):
-        bloque = palabras[n:n + por]
-        for k, w in enumerate(bloque):
-            fin = bloque[k + 1]["i"] if k + 1 < len(bloque) else w["f"] + 0.15
-            palabra = (lambda x: x["p"].upper() if mayus else x["p"])
-            if estilo == "minimal":
-                if k:
-                    continue                                # una linea por bloque, sin resaltar
-                fin = bloque[-1]["f"] + 0.15
-                texto = " ".join(palabra(x) for x in bloque)
-            else:
-                texto = " ".join((r"{\c" + color(paleta["acento"]) + r"&}" + palabra(x) + r"{\r}")
-                                 if j == k else palabra(x) for j, x in enumerate(bloque))
-                if estilo == "pop" and k == 0:
-                    texto = r"{\fscx70\fscy70\t(0,90,\fscx108\fscy108)\t(90,160,\fscx100\fscy100)}" + texto
-            lineas.append(f"Dialogue: 0,{trabajado._t(w['i'])},{trabajado._t(max(fin, w['i'] + 0.05))},Sub,,0,0,0,,{texto}")
+    # cuantos caracteres caben en una linea a ese tamano (1080 de ancho, 70 de margen)
+    max_chars = {"pop": 14, "caja": 18, "minimal": 30}.get(estilo, 18)
+    rebote = r"\fscx70\fscy70\t(0,90,\fscx108\fscy108)\t(90,160,\fscx100\fscy100)" if estilo == "pop" else ""
+    lineas = [f"Dialogue: 0,{trabajado._t(a)},{trabajado._t(b)},Sub,,0,0,0,,{texto}"
+              for a, b, texto in trabajado.lineas_karaoke(
+                  palabras, color(paleta["acento"]), por, max_chars, mayusculas=mayus,
+                  resaltar=estilo != "minimal", extra_entrada=("{" + rebote + "}") if rebote else "",
+                  normal_ass=color(paleta["texto"]))]
     with open(destino, "w", encoding="utf-8") as fh:
         fh.write(cab + "\n".join(lineas) + "\n")
     return destino
@@ -366,7 +360,12 @@ def montar_clip(ident, clip, palabras, opciones, estilo_id, idioma):
     a, b = clip["inicio"], clip["fin"]
     tramos = trozos(a, b, palabras)
     limpio = os.path.join(carpeta, "limpio.mp4")
-    trabajado._montar(original, tramos, limpio, opciones["encuadre"], opciones["mejorar_audio"], opciones["zooms"])
+    if opciones.get("ya_subtitulado"):
+        opciones = dict(opciones, subtitulos=False, encuadre="fondo")
+    if opciones["encuadre"] == "cara":
+        _montar_cara(original, tramos, limpio, opciones["mejorar_audio"], opciones["zooms"])
+    else:
+        trabajado._montar(original, tramos, limpio, opciones["encuadre"], opciones["mejorar_audio"], opciones["zooms"])
     nuevas = trabajado._remapear(palabras, tramos)
     _srt(nuevas, os.path.join(carpeta, "subtitulos.srt"))
     final = os.path.join(carpeta, "final.mp4")
@@ -378,10 +377,36 @@ def montar_clip(ident, clip, palabras, opciones, estilo_id, idioma):
                            "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy", final], "poner los subtitulos")
     else:
         shutil.copyfile(limpio, final)
-    if opciones["viral"]:
+    if opciones.get("viral"):
         gancho = (clip.get("gancho") or viral.gancho_de(" ".join(w["p"] for w in nuevas))).upper()[:60]
-        viral.pulir_en_sitio(final, gancho)
+        viral.pulir_en_sitio(final, gancho, barra=opciones.get("barra", False))
     aviso = ""
+    # LA FRASE DE CONTEXTO (va delante de todo; el fondo y la marca, despues)
+    if opciones.get("voz_contexto"):
+        frase = clip.get("contexto") or clip.get("titulo") or ""
+        try:
+            clip["contexto_s"] = anteponer_contexto(final, frase, estilo_id, idioma)
+        except Exception as fallo:                          # noqa: BLE001
+            aviso = f"sin frase de contexto: {str(fallo)[:150]}"
+    # EL FONDO: musica debajo y un whoosh en cada corte (donde cambia el zoom)
+    info_fondo = None
+    if opciones.get("musica") or opciones.get("efectos"):
+        # los cortes en el tiempo del clip FINAL: con frase de contexto, todo
+        # empieza mas tarde y su final es un corte mas (y donde entra el gancho)
+        entrada = float(clip.get("contexto_s") or 0.0)
+        cortes, t = [], entrada
+        for x, y in tramos:
+            cortes.append(round(t, 2))
+            t += y - x
+        try:
+            info_fondo = fondo.vestir_en_sitio(final, opciones.get("musica") or "", [c for c in cortes if c > 0.3],
+                                               semilla=f"{ident}-{clip['n']}", con_efectos=opciones.get("efectos", True),
+                                               gancho_en=entrada)
+            if info_fondo.get("aviso"):
+                aviso = info_fondo["aviso"]
+            clip["musica"] = info_fondo.get("musica")         # el credito, en la pantalla del clipping
+        except Exception as fallo:                          # noqa: BLE001
+            aviso = f"el fondo no se ha podido poner: {str(fallo)[:200]}"
     if estilo_id and marca.activa(estilo_id, True):
         try:
             marca.aplicar_en_sitio(final, estilo_id, True)
@@ -401,10 +426,54 @@ def montar_clip(ident, clip, palabras, opciones, estilo_id, idioma):
         "idioma": idioma, "duracion": round(medios.duracion_media(final) or 0, 1),
         "titulo": clip.get("titulo") or f"Clip {clip['n']}", "gancho": clip.get("gancho") or "",
         "texto": texto[:4000], "origen": "clipping", "clipping": ident, "tramos": tramos,
-        "hashtags": clip.get("hashtags") or [], "aviso_marca": aviso,
+        "hashtags": clip.get("hashtags") or [], "aviso_marca": aviso, "fondo": info_fondo,
         "opciones": {"maximo": round(b - a), "encuadre": opciones["encuadre"]}})
     os.remove(final)
     return tid
+
+
+def _medidas(ruta):
+    sonda = subprocess.run([medios.ffprobe(), "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "stream=width,height", "-of", "csv=p=0:s=x", ruta],
+                           capture_output=True, text=True, timeout=60, **medios.SIN_VENTANA)
+    try:
+        ancho, alto = (int(x) for x in sonda.stdout.strip().split("x")[:2])
+        return ancho, alto
+    except ValueError:
+        return 1920, 1080
+
+
+def _montar_cara(original, tramos, destino, mejorar_audio, zooms):
+    """Como `trabajado._montar`, pero cada trozo recortado en vertical CENTRADO
+    EN LA CARA de quien sale (pasos/caras.py). Sin cara, ese trozo va entero
+    sobre su fondo desenfocado."""
+    try:                                                    # OpenCV solo hace falta aqui
+        from . import caras as _caras
+    except ImportError:
+        import caras as _caras
+    ancho_f, alto_f = _medidas(original)
+    centros = _caras.centros(original, tramos)
+    W, H, acercado = trabajado.ANCHO, trabajado.ALTO, trabajado.ACERCADO
+    partes, n = [], len(tramos)
+    for k, ((a, b), centro) in enumerate(zip(tramos, centros)):
+        zoom = (f",scale=iw*{acercado}:ih*{acercado},crop=iw/{acercado}:ih/{acercado}" if zooms and k % 2 else "")
+        corte = f"[0:v]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS"
+        if centro is not None and ancho_f > alto_f:
+            partes.append(f"{corte},{_caras.filtro_recorte(centro, ancho_f, alto_f, W, H)}{zoom},scale={W}:{H},setsar=1,fps=30[v{k}]")
+        else:
+            partes.append(f"{corte}{zoom},split[p{k}][q{k}];"
+                          f"[p{k}]scale={W}:{H}:force_original_aspect_ratio=increase,"
+                          f"crop={W}:{H},boxblur=25:2,eq=brightness=-0.15[f{k}];"
+                          f"[q{k}]scale={W}:{H}:force_original_aspect_ratio=decrease[d{k}];"
+                          f"[f{k}][d{k}]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[v{k}]")
+        partes.append(f"[0:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS[a{k}]")
+    union = "".join(f"[v{k}][a{k}]" for k in range(n)) + f"concat=n={n}:v=1:a=1[v][ac]"
+    audio = ("[ac]highpass=f=80,afftdn=nf=-25,loudnorm=I=-14:TP=-1.5:LRA=11[a]" if mejorar_audio else "[ac]anull[a]")
+    trabajado._ffmpeg(["-i", original, "-filter_complex", ";".join(partes) + ";" + union + ";" + audio,
+                       "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                       "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", destino],
+                      "montar siguiendo la cara")
+    return centros
 
 
 def _original(ident):
@@ -425,9 +494,18 @@ def opciones_de(datos):
     estilo_sub = datos.get("estilo_sub") if datos.get("estilo_sub") in ESTILOS_SUB else "pop"
     si = lambda clave, defecto=True: str(datos.get(clave, defecto)).strip().lower() not in ("0", "false", "no", "")
     return {"n": n, "min_s": min_s, "max_s": max_s, "estilo_sub": estilo_sub,
-            "encuadre": "centro" if datos.get("encuadre") == "centro" else "fondo",
+            "encuadre": datos.get("encuadre") if datos.get("encuadre") in ("centro", "fondo", "cara") else "cara",
             "subtitulos": si("subtitulos"), "viral": si("viral"), "mejorar_audio": si("mejorar_audio"),
-            "zooms": si("zooms"), "indicaciones": str(datos.get("indicaciones") or "")[:500]}
+            "zooms": si("zooms"), "indicaciones": str(datos.get("indicaciones") or "")[:500],
+            # el fondo (pasos/fondo.py) y la barra de progreso (apagada de fabrica)
+            "musica": datos.get("musica") if datos.get("musica") in fondo.ANIMOS else "",
+            "efectos": si("efectos"), "barra": si("barra", False),
+            # la frase de contexto con voz IA (de pago, ~0,01 $ por clip)
+            "voz_contexto": si("voz_contexto", False),
+            # EL VIDEO YA TRAE SUBTITULOS GRABADOS: los nuestros encima se ven
+            # «uno encima del otro», y recortar a vertical corta los suyos por
+            # los lados. Asi que ni subtitulos nuestros ni recorte: entero.
+            "ya_subtitulado": si("ya_subtitulado", False)}
 
 
 def crear(ruta_video, nombre="", estilo_id="", datos=None, ruta_info="", permiso=False, url=""):
@@ -575,3 +653,183 @@ def ruta_descarga(ident, n, que):
     if not ruta or not os.path.exists(ruta):
         raise ValueError("todavia no esta")
     return ruta
+
+
+# ------------------------------------------------------------- programar
+#
+# PUBLICAR TODOS LOS CLIPS, REPARTIDOS: el primero cuando se diga y los demas
+# cada N horas. Por cada clip, con el MISMO camino que la pantalla (la API del
+# propio estudio): el mini estudio del momento y los textos (gratis), y la
+# subida a las cuentas del estilo -- YouTube y Facebook PROGRAMADOS a su hora
+# (lo publican ellos), TikTok a BORRADORES (su API no deja programar: se
+# publica desde la app con un toque).
+
+def _api(metodo, ruta, datos=None, tiempo=120):
+    import urllib.error
+    import urllib.request
+    base = (os.environ.get("ESTUDIO_API") or "http://127.0.0.1:8110").rstrip("/")
+    cuerpo = json.dumps(datos).encode("utf-8") if datos is not None else None
+    peticion = urllib.request.Request(base + ruta, data=cuerpo, method=metodo,
+                                      headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(peticion, timeout=tiempo) as r:
+            return json.loads(r.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as fallo:
+        try:
+            detalle = json.loads(fallo.read().decode("utf-8")).get("error")
+        except Exception:                                   # noqa: BLE001
+            detalle = str(fallo)
+        raise RuntimeError(detalle or str(fallo))
+
+
+def horario(inicio_iso, cada_horas, cuantos):
+    """Los momentos de publicacion (ISO UTC, con Z). -> [str]"""
+    import calendar
+    base = calendar.timegm(time.strptime(str(inicio_iso)[:19], "%Y-%m-%dT%H:%M:%S"))
+    paso = max(0.5, float(cada_horas)) * 3600
+    return [time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(base + k * paso)) for k in range(cuantos)]
+
+
+def programar(ident, inicio_iso, cada_horas=24, redes=None, privacidad="public", api=None):
+    """Lanza en un hilo la publicacion repartida de los clips listos. -> ficha"""
+    api = api or _api
+    ficha = leer(ident)
+    if not ficha:
+        raise ValueError("ese clipping no existe")
+    estilo = ficha.get("estilo") or ""
+    if not estilo:
+        raise ValueError("este clipping no tiene estilo: sin estilo no hay cuentas donde publicar")
+    redes = {r: bool((redes or {}).get(r)) for r in ("youtube", "tiktok", "facebook")}
+    if not any(redes.values()):
+        raise ValueError("marca al menos una red")
+    clips = [c for c in ficha.get("clips") or [] if c.get("estado") == "listo" and c.get("trabajado")]
+    if not clips:
+        raise ValueError("no hay clips listos que publicar")
+    cuandos = horario(inicio_iso, cada_horas, len(clips))
+    items = [{"n": c["n"], "trabajado": c["trabajado"], "red": red, "cuando": cuandos[k], "estado": "pendiente"}
+             for k, c in enumerate(clips) for red, quiere in redes.items() if quiere]
+    ficha["programacion"] = {"estado": "trabajando", "items": items, "desde": time.time(), "error": ""}
+    _guardar(ident, ficha)
+
+    def correr():
+        p = ficha["programacion"]
+        try:
+            for c in clips:
+                tid = c["trabajado"]
+                mios = [i for i in items if i["trabajado"] == tid]
+                for i in mios:
+                    i["estado"] = "escribiendo"
+                _guardar(ident, ficha)
+                # los textos (con el mini estudio del momento), con el estilo de las cuentas
+                api("POST", f"/api/trabajados/{tid}/publicar/seo", {"estilo": estilo})
+                for _ in range(120):
+                    seo = (api("GET", f"/api/trabajados/{tid}/publicar") or {}).get("seo") or {}
+                    if seo.get("estado") != "pensando":
+                        break
+                    time.sleep(5)
+                for i in mios:
+                    try:
+                        cuerpo = {"estilo": estilo, "privacidad": privacidad}
+                        if i["red"] == "tiktok":
+                            cuerpo["modo"] = "borrador"
+                        else:
+                            cuerpo["publicar_en"] = i["cuando"]
+                        api("POST", f"/api/trabajados/{tid}/publicar/{i['red']}", cuerpo)
+                        i["estado"] = "enviado"
+                    except Exception as fallo:              # noqa: BLE001
+                        i.update(estado="error", error=str(fallo)[:200])
+                    _guardar(ident, ficha)
+            p["estado"] = "listo"
+            enviados = sum(1 for i in items if i["estado"] == "enviado")
+            try:
+                from . import avisos as _avisos
+            except ImportError:
+                import avisos as _avisos
+            try:
+                _avisos.avisar("publicado", f"📅 {ficha.get('nombre', 'Clipping')}: {enviados} publicaciones programadas",
+                               "TikTok queda en borradores: publícalos desde la app." if redes["tiktok"] else "",
+                               estilo)
+            except Exception:                               # noqa: BLE001
+                pass
+        except Exception as fallo:                          # noqa: BLE001
+            p.update(estado="error", error=str(fallo)[:300])
+        _guardar(ident, ficha)
+
+    threading.Thread(target=correr, daemon=True, name=f"programar-{ident}").start()
+    return ficha
+
+
+# --------------------------------------------------- la frase de contexto
+#
+# UNA FRASE CON VOZ IA AL EMPEZAR («Este empresario explica por que...»), sobre
+# el primer fotograma desenfocado y con la frase escrita. Es lo que convierte
+# un trozo de video ajeno en algo con aportacion propia (YouTube no paga el
+# «contenido reutilizado»). Es de PAGO, aunque poco: los caracteres de la voz
+# (~0,01 $ por clip), y se apunta en el gasto como cualquier voz.
+
+def coste_contexto(clips=1, caracteres=110):
+    from nucleo import coste as _coste
+    tarifa = _coste.tarifa_caracter() or 0.0
+    return round(tarifa * caracteres * clips, 4)
+
+
+def _voz_del_estilo(estilo_id, idioma):
+    ficha = presets_canal.leer(estilo_id) if estilo_id else None
+    voz = dict(((ficha or {}).get("datos") or {}).get("voz") or {})
+    voz["idioma"] = idioma or voz.get("idioma") or "es"
+    if voz.get("idioma") != (((ficha or {}).get("datos") or {}).get("voz") or {}).get("idioma"):
+        voz.pop("voz_id", None)                             # otro idioma: la voz por defecto de ese idioma
+    return voz
+
+
+def anteponer_contexto(mp4, texto, estilo_id="", idioma="es", sintetizar=None):
+    """Pone delante la frase de contexto con voz. -> segundos que dura"""
+    try:
+        from . import p4_voz
+    except ImportError:
+        import p4_voz
+    from nucleo import coste as _coste
+    texto = " ".join(str(texto or "").split())[:160]
+    if not texto:
+        raise ValueError("no hay frase de contexto")
+    cfg = p4_voz.resolver_params(_voz_del_estilo(estilo_id, idioma))
+    wav, duracion, _ = (sintetizar or p4_voz.sintetizar_toma)(texto, cfg)
+    carpeta = os.path.dirname(mp4)
+    ruta_wav = os.path.join(carpeta, "contexto.wav")
+    with open(ruta_wav, "wb") as fh:
+        fh.write(wav)
+    try:
+        _coste._linea(_coste.RUTA_GLOBAL, {
+            "id": f"ctx_{uuid.uuid4().hex[:8]}", "proveedor": "tts", "paso": "clipping", "operacion": "contexto",
+            "cantidad": {"caracteres": len(texto)}, "usd": round((_coste.tarifa_caracter() or 0) * len(texto), 6),
+            "usd_estimado": True, "momento": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    except Exception:                                       # noqa: BLE001
+        pass
+    largo = max(1.2, float(duracion or 0) + 0.35)
+    primera = os.path.join(carpeta, "contexto.png")
+    trabajado._ffmpeg(["-i", mp4, "-frames:v", "1", primera], "sacar el primer fotograma")
+    fuente = viral.fuente_negrita()
+    rotulo = os.path.join(carpeta, "contexto.txt")
+    with open(rotulo, "w", encoding="utf-8") as fh:
+        fh.write(viral._partir(texto, 16))
+    W, H = trabajado.ANCHO, trabajado.ALTO
+    dibujo = (f",drawtext=fontfile='{fuente}':textfile='{rotulo}':fontsize=74:fontcolor=white:"
+              f"line_spacing=14:box=1:boxcolor=black@0.55:boxborderw=26:x=(w-text_w)/2:y=(h-text_h)/2"
+              if fuente else "")
+    intro = os.path.join(carpeta, "contexto.mp4")
+    trabajado._ffmpeg(["-loop", "1", "-t", f"{largo:.2f}", "-i", primera, "-i", ruta_wav,
+                       "-filter_complex",
+                       f"[0:v]scale={W}:{H},boxblur=20:2,eq=brightness=-0.25{dibujo},fade=t=in:st=0:d=0.2,"
+                       f"setsar=1,fps=30,format=yuv420p[v];[1:a]aresample=48000,apad[a]",
+                       "-map", "[v]", "-map", "[a]", "-t", f"{largo:.2f}", "-c:v", "libx264", "-preset", "veryfast",
+                       "-crf", "20", "-c:a", "aac", "-ar", "48000", "-ac", "2", intro], "hacer la frase de contexto")
+    unido = os.path.join(carpeta, "con_contexto.mp4")
+    trabajado._ffmpeg(["-i", intro, "-i", mp4, "-filter_complex",
+                       "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]", "-map", "[v]", "-map", "[a]",
+                       "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+                       "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", unido], "unir la frase de contexto")
+    os.replace(unido, mp4)
+    for x in (ruta_wav, primera, rotulo, intro):
+        if os.path.exists(x):
+            os.remove(x)
+    return round(largo, 2)

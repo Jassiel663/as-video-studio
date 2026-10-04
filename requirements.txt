@@ -21,3 +21,6 @@ requests==2.34.2
 websocket-client==1.9.0
 # El SHORT TRABAJADO (pasos/trabajado.py) transcribe palabra a palabra en local.
 faster-whisper==1.2.1
+# El ENCUADRE QUE SIGUE LA CARA del clipping (pasos/caras.py). La version sin
+# interfaz grafica; la 5 ya admite el numpy de este entorno (la 4.12 lo bajaba).
+opencv-python-headless==5.0.0.93
