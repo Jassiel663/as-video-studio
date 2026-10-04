@@ -201,6 +201,19 @@ def mapear(nuevas, viejas):
             else:
                 continue
             salida[e["id"]] = elegido["id"]
+    # SIN REPETIR mientras haya imagenes: en orden, cada plano toma la que le
+    # toca o la siguiente libre, dejando sitio para los que quedan. Dos planos
+    # seguidos con la misma imagen se ven como un fallo (y el paso de imagenes
+    # lo para); solo si el doblaje tiene MAS planos que el original se repite.
+    orden_v = {e["id"]: k for k, e in enumerate(viejas)}
+    nuevas_orden = [e for e in nuevas if e["id"] in salida]
+    if len(nuevas_orden) <= len(viejas):
+        previo = -1
+        for k, e in enumerate(nuevas_orden):
+            quedan = len(nuevas_orden) - k - 1
+            idx = min(max(orden_v[salida[e["id"]]], previo + 1), len(viejas) - 1 - quedan)
+            salida[e["id"]] = viejas[idx]["id"]
+            previo = idx
     return salida
 
 

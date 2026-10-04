@@ -4476,7 +4476,9 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_assets=False,
         # que sus prompts salieron identicos y la cache devolvio el mismo fichero.
         # En el modo explicito 'adoptar' es lo esperado, porque se esta repartiendo
         # un fondo de arte limitado entre mas planos de los que hay.
-        if p["motor_imagen"] == "adoptar":
+        # Y EN UN DOBLAJE, igual: las imagenes son las del original y si el
+        # doblaje tiene mas planos alguna se repite a proposito
+        if p["motor_imagen"] == "adoptar" or p.get("doblaje_de"):
             avisar(None, f"AVISO: planos con la misma imagen adoptada: {detalle}")
             plan.setdefault("informe", {})["planos_repetidos"] = repetidos
         else:

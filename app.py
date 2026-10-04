@@ -9912,6 +9912,115 @@ def subir_trabajado(ident: str, red: str, cuerpo: dict = Body(default=None)):
     raise ErrorApi(404, f"red desconocida: {red}")
 
 
+@app.post("/api/clipping")
+async def crear_clipping(archivo: UploadFile = File(...), info: UploadFile = File(default=None),
+                         nombre: str = Form(default=""), estilo: str = Form(default=""),
+                         n: int = Form(default=3), min_s: int = Form(default=30), max_s: int = Form(default=60),
+                         estilo_sub: str = Form(default="pop"), encuadre: str = Form(default="fondo"),
+                         subtitulos: str = Form(default="1"), viral: str = Form(default="1"),
+                         mejorar_audio: str = Form(default="1"), zooms: str = Form(default="1"),
+                         indicaciones: str = Form(default=""), permiso: str = Form(default="0"),
+                         url: str = Form(default="")):
+    """Un video largo -> N clips de 30-60 s editados (pasos/clipping.py). Gratis.
+    `info` es la ficha de YouTube (.info.json de yt-dlp), opcional."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    mod = PASOS_MODULOS.clipping
+    ext = os.path.splitext(archivo.filename or "")[1].lower()
+    if ext not in (".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"):
+        raise ErrorApi(400, "sube un video (mp4, webm, mkv...)")
+    carpeta = os.path.join(mod.CARPETA, "_subidas")
+    os.makedirs(carpeta, exist_ok=True)
+    sello = int(time.time() * 1000)
+    temporal = os.path.join(carpeta, f"{sello}{ext}")
+    with open(temporal, "wb") as fh:
+        while True:
+            trozo = await archivo.read(4 * 1024 * 1024)
+            if not trozo:
+                break
+            fh.write(trozo)
+    ruta_info = ""
+    if info is not None and (info.filename or "").lower().endswith(".json"):
+        ruta_info = os.path.join(carpeta, f"{sello}.info.json")
+        with open(ruta_info, "wb") as fh:
+            fh.write(await info.read())
+    si = str(permiso).strip().lower() in ("1", "true", "si", "on")
+    try:
+        return mod.crear(temporal, nombre or os.path.splitext(archivo.filename or "")[0], estilo, {
+            "n": n, "min_s": min_s, "max_s": max_s, "estilo_sub": estilo_sub, "encuadre": encuadre,
+            "subtitulos": subtitulos, "viral": viral, "mejorar_audio": mejorar_audio, "zooms": zooms,
+            "indicaciones": indicaciones}, ruta_info=ruta_info, permiso=si, url=url)
+    except ValueError as fallo:
+        for ruta in (temporal, ruta_info):
+            if ruta and os.path.exists(ruta):
+                os.remove(ruta)
+        raise ErrorApi(400, str(fallo))
+
+
+@app.get("/api/clipping")
+def listar_clipping():
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return {"clipping": PASOS_MODULOS.clipping.listar()}
+
+
+@app.get("/api/clipping/{ident}")
+def leer_clipping(ident: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = PASOS_MODULOS.clipping.leer(ident)
+    if not datos:
+        raise ErrorApi(404, "ese clipping no existe")
+    return datos
+
+
+@app.post("/api/clipping/{ident}/reintentar")
+def reintentar_clipping(ident: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    try:
+        return PASOS_MODULOS.clipping.reintentar(ident)
+    except ValueError as fallo:
+        raise ErrorApi(404, str(fallo))
+
+
+@app.post("/api/clipping/{ident}/clips/{n}")
+def ajustar_clip(ident: str, n: int, cuerpo: dict = Body(default=None)):
+    """Mueve el inicio o el fin de un clip (segundos del video) y lo re-edita."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    datos = _cuerpo(cuerpo)
+    try:
+        return PASOS_MODULOS.clipping.rehacer_clip(ident, n, datos.get("inicio"), datos.get("fin"))
+    except (TypeError, ValueError) as fallo:
+        raise ErrorApi(400, str(fallo))
+
+
+@app.get("/api/clipping/{ident}/clips/{n}/{que}")
+def descargar_clip(ident: str, n: int, que: str):
+    """Para CapCut: el clip LIMPIO (sin subtitulos ni textos) o sus subtitulos .srt."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    try:
+        ruta = PASOS_MODULOS.clipping.ruta_descarga(ident, n, que)
+    except ValueError as fallo:
+        raise ErrorApi(404, str(fallo))
+    nombre = f"clip{n}_limpio.mp4" if que == "limpio" else f"clip{n}.srt"
+    return FileResponse(ruta, filename=nombre,
+                        media_type="video/mp4" if que == "limpio" else "application/x-subrip")
+
+
+@app.delete("/api/clipping/{ident}")
+def borrar_clipping(ident: str):
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    try:
+        PASOS_MODULOS.clipping.borrar(ident)
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+    return {"borrado": ident}
+
+
 @app.delete("/api/trabajados/{ident}")
 def borrar_trabajado(ident: str):
     if PASOS_MODULOS is None:

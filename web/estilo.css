@@ -3089,3 +3089,12 @@ video.muestra-marca { width: 100%; max-width: 420px; border-radius: 10px; backgr
 .pasos-app li b { display: block; }
 .pasos-app li span { display: block; color: var(--tenue); font-size: 13px; margin-top: 2px; word-break: break-word; }
 .app-directa { margin-bottom: 12px; }
+
+/* clipping */
+.clipping-form .fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.permiso-clip { align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--linea-suave); border-radius: 10px; }
+.permiso-clip span { font-size: 13px; color: var(--tenue); }
+.permiso-clip b { color: var(--texto); }
+.clipping-job .light-cab { flex-wrap: wrap; gap: 8px; }
+.tarjeta-video.clip .porque-clip { font-style: italic; }
+.ajuste-clip { display: flex; align-items: center; gap: 6px; padding: 8px 10px; flex-wrap: wrap; }

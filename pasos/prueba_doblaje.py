@@ -59,6 +59,14 @@ try:
     m = doblaje.mapear(nuevas, viejas)
     comprobar("un plano por bloque toma el del medio", m["S001"] in ("S001", "S002"), m)
     comprobar("dos planos en un bloque de tres: primero y ultimo", m["S002"] == "S003" and m["S003"] == "S005", m)
+    apretadas = [escena("S001", "B1", 0, 2), escena("S002", "B1", 2, 4), escena("S003", "B1", 4, 6),
+                 escena("S004", "B2", 6, 12)]
+    m = doblaje.mapear(apretadas, viejas)
+    comprobar("un bloque con MAS planos que el original no repite imagen si hay de sobra",
+              len(set(m.values())) == 4 and list(m.values()) == sorted(m.values()), m)
+    muchas = [escena(f"S{k:03d}", "B1", k, k + 1) for k in range(7)]
+    m = doblaje.mapear(muchas, viejas)
+    comprobar("con mas planos que imagenes, se repite (no hay otra)", len(m) == 7 and len(set(m.values())) <= 5, m)
     sueltas = [escena("S001", "X1", 0, 5), escena("S002", "X2", 15, 20)]
     m = doblaje.mapear(sueltas, viejas)
     comprobar("sin bloques que casen, por la altura del video", m == {"S001": "S001", "S002": "S005"}, m)

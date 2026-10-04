@@ -95,6 +95,8 @@ from . import marca  # noqa: E402,F401
 from . import doblaje  # noqa: E402,F401
 # las copias de seguridad diarias
 from . import copias  # noqa: E402,F401
+# clipping: de un video largo, N clips editados
+from . import clipping  # noqa: E402,F401
 from . import p6_assets, p7_callouts, p8_render  # noqa: E402,F401
 # y repaso (lo que se escribe MIRANDO el video montado) el ultimo de los que
 # deciden: reparte notas en cambios de todos los pasos anteriores
@@ -135,5 +137,5 @@ __all__ = ["catalogo_visual", "conservar", "repaso",
            "p4_voz", "p5_revision_audio", "presets_voz", "presets_canal",
            "presets_light", "recetas", "sonido", "tipografia", "subtitulos", "tono", "transiciones",
            "voz_descrita",
-           "animar", "reales", "ideas", "canal", "miniaturas", "estudios", "nicho", "publicar", "viral", "preguntas", "youtube", "redes", "trabajado", "avisos", "piloto", "marca", "doblaje", "copias", "shorts", "p6_assets", "p7_callouts", "p8_render",
+           "animar", "reales", "ideas", "canal", "miniaturas", "estudios", "nicho", "publicar", "viral", "preguntas", "youtube", "redes", "trabajado", "avisos", "piloto", "marca", "doblaje", "copias", "clipping", "shorts", "p6_assets", "p7_callouts", "p8_render",
            "MODULOS", "modulo_de"]
