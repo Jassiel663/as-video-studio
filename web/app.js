@@ -5421,6 +5421,7 @@ function marcaMind(clase) {
 }
 
 const ICONOS_MIND = {
+  app: 'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z M11 18h2',
   copias: 'M4 7h16v12H4z M8 7V4h8v3 M12 11v5 M9.5 13.5 12 16l2.5-2.5',
   marca: 'M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z',
   piloto: 'M12 2l3 7h-6z M5 13l7-4 7 4-7 9z M12 9v13',
@@ -5460,6 +5461,7 @@ const ZONAS_MIND = [
   { grupo: 'Producción', zonas: [
     ['piloto', 'Piloto automático'], ['avisos', 'Avisos'], ['cola', 'Cola'],
     ['presupuesto', 'Presupuesto'], ['copias', 'Copias de seguridad'], ['papelera', 'Papelera']] },
+  { grupo: 'Ayuda', zonas: [['app', 'App en el celular']] },
 ];
 const TITULO_ZONA = Object.fromEntries(ZONAS_MIND.flatMap(g => g.zonas));
 
@@ -6629,6 +6631,7 @@ function vistaGaleriaLight() {
   if (zona === 'piloto') return vistaPilotoZona();
   if (zona === 'marca') return vistaMarcaZona();
   if (zona === 'copias') return vistaCopiasZona();
+  if (zona === 'app') return vistaAppZona();
   if (zona === 'avisos') return vistaAvisosZona();
   if (zona === 'competencia') return vistaCompetenciaZona();
   if (zona === 'miniaturas') return vistaMiniaturasZona();
@@ -15004,7 +15007,7 @@ window.addEventListener('appinstalled', () => {
 });
 
 function botonInstalarApp() {
-  if (ES_APP || (!INSTALAR.evento && !ES_IPHONE)) return null;
+  if (ES_APP || !INSTALAR.evento) return null;
   const b = h('button', { clase: 'lateral-item instalar-app', onclick: async () => {
     if (INSTALAR.evento) {
       INSTALAR.evento.prompt();
@@ -15012,11 +15015,87 @@ function botonInstalarApp() {
       INSTALAR.evento = null;
       pintarLateralLight();
     } else {
-      alert('Para instalar Mind Videos en el iPhone:\n\n1. Ábrela en Safari.\n2. Pulsa el botón Compartir (el cuadrado con la flecha).\n'
-        + '3. Elige «Añadir a pantalla de inicio».\n\nTe quedará con su icono, como una app.');
+      irAZonaLight('app');
     }
   } });
   b.appendChild(iconoNav('M12 3v12 M7 10l5 5 5-5 M5 21h14'));
   b.appendChild(h('span', { clase: 'crece' }, 'Instalar la app'));
   return b;
+}
+
+/* ---------------------------------------------- la seccion «App en el celular»
+ * Los pasos para instalarla en Android, iPhone y ordenador. Abre por defecto la
+ * pestaña del aparato desde el que se mira. */
+var ES_ANDROID = /android/i.test(navigator.userAgent || '');
+var APP_CEL = { pestana: ES_IPHONE ? 'iphone' : ES_ANDROID ? 'android' : 'ordenador' };
+
+function pasosApp(lista) {
+  return h('ol', { clase: 'pasos-app' }, ...lista.map(([titulo, detalle]) =>
+    h('li', {}, h('b', {}, titulo), detalle ? h('span', {}, detalle) : null)));
+}
+
+function vistaAppZona() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Ayuda', 'App en el celular',
+    'Mind Videos se instala como una app: te queda su icono en la pantalla y se abre a pantalla completa, sin la barra del navegador. '
+    + 'Es la misma página, así que todo lo que hagas se ve igual en la web. Gratis y sin tienda de apps.'));
+  if (ES_APP) {
+    caja.appendChild(h('div', { clase: 'caja-info' }, '✅ Ya la estás usando como app. ¡Listo!'));
+  } else if (INSTALAR.evento) {
+    caja.appendChild(h('div', { clase: 'fila app-directa' },
+      h('span', { clase: 'crece' }, 'Tu navegador permite instalarla con un toque:'),
+      h('button', { clase: 'primario', onclick: async () => {
+        INSTALAR.evento.prompt();
+        try { await INSTALAR.evento.userChoice; } catch (e) { /* cancelado */ }
+        INSTALAR.evento = null;
+        pintarLight();
+      } }, '📲 Instalar ahora')));
+  }
+  const pestanas = [['android', '🤖 Android'], ['iphone', '📱 iPhone'], ['ordenador', '💻 Ordenador']];
+  caja.appendChild(h('div', { clase: 'tira-modos' }, ...pestanas.map(([id, t]) =>
+    h('button', { clase: 'mini' + (APP_CEL.pestana === id ? ' activo' : ''), onclick: () => { APP_CEL.pestana = id; pintarLight(); } }, t))));
+  const url = location.origin + (BASE || '') + '/';
+  const bloque = h('section', { clase: 'bloque-shorts app-pasos' });
+  if (APP_CEL.pestana === 'android') {
+    bloque.appendChild(h('h2', {}, 'En Android (con Chrome)'));
+    bloque.appendChild(pasosApp([
+      ['Abre Chrome y entra en la página.', url],
+      ['Inicia sesión con tu usuario.', ''],
+      ['Pulsa los tres puntos ⋮ (arriba a la derecha).', ''],
+      ['Elige «Instalar aplicación» o «Añadir a pantalla de inicio».', 'Si en el menú de la izquierda te sale «Instalar la app», también vale.'],
+      ['Confirma con «Instalar».', 'Te aparece el icono de Mind Videos con las demás apps.'],
+    ]));
+  } else if (APP_CEL.pestana === 'iphone') {
+    bloque.appendChild(h('h2', {}, 'En iPhone o iPad (con Safari)'));
+    bloque.appendChild(h('div', { clase: 'pista' }, 'Tiene que ser con Safari: desde Chrome o desde Instagram/WhatsApp no deja instalarla.'));
+    bloque.appendChild(pasosApp([
+      ['Abre Safari y entra en la página.', url],
+      ['Inicia sesión con tu usuario.', ''],
+      ['Pulsa el botón Compartir.', 'Es el cuadrado con una flecha hacia arriba, abajo en el centro (o arriba en iPad).'],
+      ['Baja y elige «Añadir a pantalla de inicio».', 'Si no lo ves, desliza la lista hacia abajo.'],
+      ['Pulsa «Añadir».', 'Te aparece el icono de Mind Videos en la pantalla de inicio.'],
+    ]));
+  } else {
+    bloque.appendChild(h('h2', {}, 'En el ordenador (Chrome o Edge)'));
+    bloque.appendChild(pasosApp([
+      ['Entra en la página e inicia sesión.', url],
+      ['En la barra de direcciones, a la derecha, pulsa el icono de instalar.', 'Es una pantallita con una flecha. En Edge también está en el menú ⋯ › Aplicaciones › «Instalar este sitio como aplicación».'],
+      ['Confirma con «Instalar».', 'Se abre en su propia ventana y queda en el escritorio y en el menú de inicio.'],
+    ]));
+  }
+  caja.appendChild(bloque);
+  caja.appendChild(h('div', { clase: 'fila' },
+    h('span', { clase: 'crece meta' }, `Dirección para pasársela a tus amigos: ${url}`),
+    h('button', { clase: 'mini', onclick: async () => {
+      try { await navigator.clipboard.writeText(url); toast('dirección copiada'); }
+      catch (e) { toast('no se ha podido copiar: ' + url, true); }
+    } }, '📋 Copiar dirección')));
+  caja.appendChild(h('section', { clase: 'bloque-shorts' },
+    h('h2', {}, 'Bueno saber'),
+    h('ul', { clase: 'mejoras' },
+      h('li', {}, 'Cada amigo la instala en su móvil y entra con su propio usuario.'),
+      h('li', {}, 'Necesita internet. Sin conexión verás un aviso, pero tus vídeos siguen haciéndose en el servidor.'),
+      h('li', {}, 'Se actualiza sola: cuando mejoramos el estudio, la app ya trae lo nuevo.'),
+      h('li', {}, 'Para quitarla, se borra como cualquier app (mantén pulsado el icono).'))));
+  return caja;
 }

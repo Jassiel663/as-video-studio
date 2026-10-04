@@ -3083,3 +3083,9 @@ video.muestra-marca { width: 100%; max-width: 420px; border-radius: 10px; backgr
 
 /* la app instalable */
 .lateral-item.instalar-app { color: var(--acento); }
+
+/* la seccion «App en el celular» */
+.pasos-app { margin: 10px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 12px; }
+.pasos-app li b { display: block; }
+.pasos-app li span { display: block; color: var(--tenue); font-size: 13px; margin-top: 2px; word-break: break-word; }
+.app-directa { margin-bottom: 12px; }
