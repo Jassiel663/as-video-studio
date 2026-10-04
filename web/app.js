@@ -5421,6 +5421,7 @@ function marcaMind(clase) {
 }
 
 const ICONOS_MIND = {
+  copias: 'M4 7h16v12H4z M8 7V4h8v3 M12 11v5 M9.5 13.5 12 16l2.5-2.5',
   marca: 'M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z',
   piloto: 'M12 2l3 7h-6z M5 13l7-4 7 4-7 9z M12 9v13',
   avisos: 'M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10 21h4',
@@ -5458,7 +5459,7 @@ const ZONAS_MIND = [
     ['ideas', 'Ideas y nicho'], ['competencia', 'Competencia']] },
   { grupo: 'Producción', zonas: [
     ['piloto', 'Piloto automático'], ['avisos', 'Avisos'], ['cola', 'Cola'],
-    ['presupuesto', 'Presupuesto'], ['papelera', 'Papelera']] },
+    ['presupuesto', 'Presupuesto'], ['copias', 'Copias de seguridad'], ['papelera', 'Papelera']] },
 ];
 const TITULO_ZONA = Object.fromEntries(ZONAS_MIND.flatMap(g => g.zonas));
 
@@ -5538,6 +5539,8 @@ function pintarLateralLight() {
   nube.appendChild(iconoNav(ICONOS_MIND.nube));
   nube.appendChild(h('span', {}, h('b', {}, 'Tu estudio en la nube'), h('small', {}, 'Trabaja aunque tú desconectes')));
   lateral.appendChild(nube);
+  const instalar = botonInstalarApp();
+  if (instalar) lateral.appendChild(instalar);
   const config = h('button', { clase: 'lateral-item', onclick: () => { document.body.classList.remove('menu-abierto'); conmutarConfig(); } });
   config.appendChild(iconoNav(ICONOS_MIND.config));
   config.appendChild(h('span', { clase: 'crece' }, 'Configuración'));
@@ -6625,6 +6628,7 @@ function vistaGaleriaLight() {
   if (zona === 'trabajado') return vistaTrabajadoZona();
   if (zona === 'piloto') return vistaPilotoZona();
   if (zona === 'marca') return vistaMarcaZona();
+  if (zona === 'copias') return vistaCopiasZona();
   if (zona === 'avisos') return vistaAvisosZona();
   if (zona === 'competencia') return vistaCompetenciaZona();
   if (zona === 'miniaturas') return vistaMiniaturasZona();
@@ -14907,4 +14911,112 @@ function bloqueDoblajeLight() {
     'Se crea un vídeo nuevo con el guion traducido y las mismas imágenes. Al abrirlo, «Generar» solo cobra la voz nueva '
     + '(lo mismo que costó la del original, normalmente céntimos). Los subtítulos y rótulos salen ya traducidos.'));
   return caja;
+}
+
+/* ===================================================== COPIAS DE SEGURIDAD
+ *
+ * Una al día, sola (pasos/copias.py). Recuperar un vídeo nunca pisa el de
+ * ahora: sale como un vídeo nuevo.
+ */
+var COPIAS = { datos: null, abierta: '', sondeo: null };
+
+function cargarCopias() {
+  pedir(`${BASE}/api/copias`).then(d => {
+    COPIAS.datos = d;
+    if (APP.light.vista === 'galeria' && zonaLight() === 'copias') pintarLight();
+    clearTimeout(COPIAS.sondeo);
+    if (d.haciendo) COPIAS.sondeo = setTimeout(cargarCopias, 5000);
+  }).catch(err => { COPIAS.datos = { error: err.message, copias: [] }; pintarLight(); });
+}
+
+function vistaCopiasZona() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Producción', 'Copias de seguridad',
+    'Cada día se guarda una copia de todo lo que costó dinero o trabajo: estilos, vídeos con su guion, voz e imágenes, '
+    + 'el taller, los estudios y las claves. Los MP4 montados no, porque se vuelven a montar gratis. Se guardan los últimos 7 días y 4 semanas.'));
+  if (!COPIAS.datos) { cargarCopias(); caja.appendChild(h('div', { clase: 'cargando' }, 'cargando…')); return caja; }
+  const d = COPIAS.datos;
+  caja.appendChild(h('div', { clase: 'fila' },
+    h('span', { clase: 'crece meta' }, d.haciendo ? '⏳ haciendo una copia ahora…'
+      : (d.copias || []).length ? `Última: ${d.copias[0].fecha.replace('T', ' ').slice(0, 16)}. La automática se hace a las ${String(d.hora).padStart(2, '0')}:00.`
+        : 'Todavía no hay ninguna copia.'),
+    h('button', { clase: 'primario', disabled: d.haciendo, onclick: async () => {
+      try { COPIAS.datos = await pedir(`${BASE}/api/copias`, { method: 'POST' }); toast('haciendo la copia: unos minutos'); pintarLight(); cargarCopias(); }
+      catch (e) { toast(e.message, true); }
+    } }, '💾 Hacer una copia ahora')));
+  if (d.error) caja.appendChild(cajaError(d.error));
+  caja.appendChild(h('div', { clase: 'pista' },
+    'Las copias están en el mismo servidor: te protegen si borras algo sin querer o algo se estropea, no si se rompe el disco.'));
+  const lista = h('div', { clase: 'lista-cola' });
+  (d.copias || []).forEach(c => {
+    const abierta = COPIAS.abierta === c.nombre;
+    const fila = h('div', { clase: 'fila-cola' },
+      h('div', { clase: 'crece' },
+        h('b', {}, `${c.fecha.replace('T', ' ').slice(0, 16)}${c.manual ? ' · hecha a mano' : ''}`),
+        h('small', {}, `${c.proyectos.length} vídeos` + (c.nuevo_mb != null ? ` · ${c.nuevo_mb} MB nuevos` : ''))),
+      h('button', { clase: 'mini', onclick: () => { COPIAS.abierta = abierta ? '' : c.nombre; pintarLight(); } },
+        abierta ? 'Cerrar' : 'Recuperar un vídeo…'));
+    lista.appendChild(fila);
+    if (abierta) {
+      const dentro = h('div', { clase: 'copia-videos' });
+      c.proyectos.forEach(p => dentro.appendChild(h('div', { clase: 'fila' },
+        h('span', { clase: 'crece' }, p.nombre),
+        h('button', { clase: 'mini', onclick: async () => {
+          if (!confirm(`¿Recuperar «${p.nombre}» de esta copia? Saldrá como un vídeo NUEVO; el de ahora no se toca.`)) return;
+          try {
+            const r = await pedir(`${BASE}/api/copias/${encodeURIComponent(c.nombre)}/recuperar`, { method: 'POST', cuerpo: { proyecto: p.id } });
+            toast('recuperado como vídeo nuevo');
+            await cargarGaleriaLight(true);
+            abrirVideoLight(r.proyecto);
+          } catch (e) { toast(e.message, true); }
+        } }, 'Recuperar'))));
+      lista.appendChild(dentro);
+    }
+  });
+  caja.appendChild(lista);
+  return caja;
+}
+
+/* ========================================================== LA APP INSTALABLE
+ *
+ * Mind Videos se puede instalar como una app (icono en el móvil o el escritorio,
+ * sin barra del navegador). Android y Chrome avisan con `beforeinstallprompt`;
+ * el iPhone no avisa: allí se explica cómo hacerlo desde Compartir.
+ */
+var INSTALAR = { evento: null };
+var ES_APP = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+var ES_IPHONE = /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(`${BASE}/sw.js`).catch(() => { /* sin app instalable */ });
+  });
+}
+window.addEventListener('beforeinstallprompt', ev => {
+  ev.preventDefault();
+  INSTALAR.evento = ev;
+  try { pintarLateralLight(); } catch (e) { /* aun no hay menu */ }
+});
+window.addEventListener('appinstalled', () => {
+  INSTALAR.evento = null;
+  toast('Mind Videos instalada: ya la tienes con su icono');
+  try { pintarLateralLight(); } catch (e) { /* sin menu */ }
+});
+
+function botonInstalarApp() {
+  if (ES_APP || (!INSTALAR.evento && !ES_IPHONE)) return null;
+  const b = h('button', { clase: 'lateral-item instalar-app', onclick: async () => {
+    if (INSTALAR.evento) {
+      INSTALAR.evento.prompt();
+      try { await INSTALAR.evento.userChoice; } catch (e) { /* cancelado */ }
+      INSTALAR.evento = null;
+      pintarLateralLight();
+    } else {
+      alert('Para instalar Mind Videos en el iPhone:\n\n1. Ábrela en Safari.\n2. Pulsa el botón Compartir (el cuadrado con la flecha).\n'
+        + '3. Elige «Añadir a pantalla de inicio».\n\nTe quedará con su icono, como una app.');
+    }
+  } });
+  b.appendChild(iconoNav('M12 3v12 M7 10l5 5 5-5 M5 21h14'));
+  b.appendChild(h('span', { clase: 'crece' }, 'Instalar la app'));
+  return b;
 }

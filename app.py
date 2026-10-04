@@ -10002,6 +10002,46 @@ def doblar_video(pid: str, cuerpo: dict = Body(default=None)):
         raise ErrorApi(400, str(fallo))
 
 
+@app.get("/api/copias")
+def leer_copias():
+    """Las copias de seguridad (pasos/copias.py) y los videos que hay en cada una."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    return PASOS_MODULOS.copias.listar()
+
+
+@app.post("/api/copias")
+def copia_ahora():
+    """Una copia de seguridad ya, en segundo plano. Gratis."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    copias = PASOS_MODULOS.copias
+    if copias.listar()["haciendo"]:
+        raise ErrorApi(409, "ya se esta haciendo una copia")
+
+    def correr():
+        try:
+            copias.hacer(manual=True)
+        except Exception:                                   # noqa: BLE001
+            pass                                            # queda en listar()["error"]
+
+    threading.Thread(target=correr, daemon=True, name="copia-manual").start()
+    time.sleep(0.2)
+    return copias.listar()
+
+
+@app.post("/api/copias/{copia}/recuperar")
+def recuperar_de_copia(copia: str, cuerpo: dict = Body(default=None)):
+    """Saca un video de una copia como un video NUEVO (no pisa el de ahora)."""
+    if PASOS_MODULOS is None:
+        raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    try:
+        nuevo = PASOS_MODULOS.copias.recuperar_proyecto(copia, _cuerpo(cuerpo).get("proyecto"))
+    except ValueError as fallo:
+        raise ErrorApi(400, str(fallo))
+    return {"proyecto": nuevo}
+
+
 def _marca_estilo(estilo):
     if PASOS_MODULOS is None:
         raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
@@ -10961,6 +11001,7 @@ def main():
     if PASOS_MODULOS is not None:
         PASOS_MODULOS.avisos.arrancar()
         PASOS_MODULOS.piloto.arrancar()
+        PASOS_MODULOS.copias.arrancar()
 
     import uvicorn
     print(f"Estudio de Video en http://{argumentos.host}:{argumentos.puerto}")

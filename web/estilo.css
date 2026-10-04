@@ -3076,3 +3076,10 @@ a.boton.apagado { opacity: .5; }
 .marca-muestras img.vertical { width: 24%; }
 video.muestra-marca { width: 100%; max-width: 420px; border-radius: 10px; background: #000; margin-top: 8px; }
 @media (max-width: 760px) { .marca-agua { grid-template-columns: 1fr; } }
+
+/* copias de seguridad */
+.copia-videos { padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+.copia-videos .fila { display: flex; align-items: center; gap: 8px; }
+
+/* la app instalable */
+.lateral-item.instalar-app { color: var(--acento); }
