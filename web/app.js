@@ -13622,7 +13622,7 @@ const INICIO = { abierta: false, paso: 0, arrancando: false, accesoFallido: '' }
    `estadoConfig()` (las claves y las cuentas del CLI, que son las mismas que
    ve Configuración). */
 const TARJETAS_INICIO = [
-  { id: 'bienvenida', titulo: 'Bienvenido a AS Video Studio', pinta: tarjetaBienvenidaInicio },
+  { id: 'bienvenida', titulo: 'Bienvenido a Mind Videos', pinta: tarjetaBienvenidaInicio },
   { id: 'claude', titulo: '1 · Tu cuenta de Claude', pinta: tarjetaClaudeInicio },
   { id: 'openai', titulo: '2 · La clave de OpenAI (imágenes)', pinta: tarjetaOpenAIInicio },
   { id: 'cartesia', titulo: '3 · La clave de Cartesia (voz)', pinta: tarjetaCartesiaInicio },
