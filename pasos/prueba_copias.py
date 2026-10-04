@@ -18,6 +18,7 @@ import time
 TEMPORAL = tempfile.mkdtemp(prefix="prueba_copias_")
 DATOS = os.path.join(TEMPORAL, "datos")
 os.environ["ESTUDIO_COPIAS"] = os.path.join(TEMPORAL, "copias")
+os.environ["ESTUDIO_COPIAS_CUENTAS"] = os.path.join(TEMPORAL, "cuentas")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import copias  # noqa: E402
@@ -49,6 +50,11 @@ try:
     escribir("proyectos/leon/pasos/render/v1/video.mp4", "mp4 pesado")
     escribir("proyectos/leon/pasos/voz/trabajo/temp.wav", "a medias")
     escribir("modelos/whisper.bin", "modelo")
+    os.makedirs(os.path.join(TEMPORAL, "cuentas", "ana", "datos", "proyectos", "p", "pasos", "render"), exist_ok=True)
+    with open(os.path.join(TEMPORAL, "cuentas", "ana", "datos", "presets.json"), "w") as fh:
+        fh.write("{}")
+    with open(os.path.join(TEMPORAL, "cuentas", "ana", "datos", "proyectos", "p", "pasos", "render", "v.mp4"), "w") as fh:
+        fh.write("mp4")
 
     print("\n== una copia ==")
     n1 = copias.hacer()
@@ -60,6 +66,8 @@ try:
     comprobar("NO lleva el render, lo de trabajo ni el modelo",
               not existe("proyectos/leon/pasos/render") and not existe("proyectos/leon/pasos/voz/trabajo")
               and not existe("modelos"))
+    comprobar("y los estudios de las otras cuentas (sin su render)",
+              existe("_cuentas/ana/datos/presets.json") and not existe("_cuentas/ana/datos/proyectos/p/pasos/render"))
     lista = copias.listar()
     comprobar("se lista con sus videos", lista["copias"][0]["proyectos"] == [{"id": "leon", "nombre": "El leon"}], lista)
 

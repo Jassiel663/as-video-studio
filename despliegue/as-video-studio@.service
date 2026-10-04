@@ -1,0 +1,41 @@
+[Unit]
+Description=Mind Videos — el estudio de la cuenta %i
+After=network.target
+
+# EL ESTUDIO DE UNA CUENTA (despliegue/asvs-cuentas lo monta al aprobarla).
+# Es el mismo programa que el de la cuenta admin, con SU carpeta de datos, y
+# encerrado: de la instalacion solo ve su propia carpeta y lo compartido (las
+# claves, el banco de musica e imagenes, las tarifas y el modelo de Whisper).
+# Los proyectos del admin, las otras cuentas, las copias y la base de datos
+# del acceso quedan TAPADOS con un sistema de ficheros vacio.
+
+[Service]
+Type=simple
+User=studio
+Group=studio
+WorkingDirectory=/opt/as-video-studio/app
+EnvironmentFile=/opt/as-video-studio/cuentas/%i/entorno
+ExecStart=/opt/as-video-studio/venv/bin/python /opt/as-video-studio/app/app.py --puerto ${PUERTO} --host 127.0.0.1
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=120
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=as-video-studio-%i
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+TemporaryFileSystem=/opt/as-video-studio/datos:ro /opt/as-video-studio/cuentas:ro /opt/as-video-studio/copias:ro /opt/as-video-studio/login:ro /opt/as-video-studio/cuentas_borradas:ro
+BindPaths=/opt/as-video-studio/cuentas/%i /opt/as-video-studio/datos/secretos /opt/as-video-studio/datos/banco
+BindReadOnlyPaths=/opt/as-video-studio/datos/tarifas.json /opt/as-video-studio/datos/modelos /opt/as-video-studio/login/datos/cuentas
+# Un estudio por cuenta: que uno no se coma la maquina de los demas.
+MemoryMax=3G
+CPUWeight=50
+
+[Install]
+WantedBy=multi-user.target

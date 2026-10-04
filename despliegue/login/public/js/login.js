@@ -5,6 +5,7 @@
 
   const form       = document.getElementById('loginForm');
   const password   = document.getElementById('password');
+  const usuario    = document.getElementById('usuario');
   const submit     = document.getElementById('submit');
   const submitText = document.getElementById('submitText');
   const errorBox   = document.getElementById('error');
@@ -93,6 +94,10 @@
   });
 
   password.addEventListener('input', clearError);
+  if (usuario) {
+    usuario.addEventListener('input', clearError);
+    usuario.focus();
+  }
 
   /* --- envío -------------------------------------------------------------- */
   form.addEventListener('submit', async function (event) {
@@ -152,7 +157,7 @@
         'Content-Type': 'application/json',
         'X-CSRF-Token': csrfToken || '',
       },
-      body: JSON.stringify({ password: pass, next: destino() }),
+      body: JSON.stringify({ password: pass, usuario: usuario ? usuario.value.trim() : '', next: destino() }),
     });
   }
 })();

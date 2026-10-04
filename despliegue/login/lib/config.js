@@ -50,6 +50,12 @@ const config = {
   // desde la consola web de ese panel. Vacio, la pantalla enlaza al listado de
   // VPS y el resto de las instrucciones vale igual.
   hostingerVpsId: String(process.env.HOSTINGER_VPS_ID || '').trim(),
+
+  // Donde vive la instalacion: de ahi cuelgan datos/ (la cuenta admin) y
+  // cuentas/<usuario>/ (las demas). Ver lib/cuentas.js.
+  raizInstalacion: process.env.RAIZ_INSTALACION || '/opt/as-video-studio',
+  // Si /registro deja crear cuentas (siempre nacen pendientes de aprobar).
+  registroAbierto: bool(process.env.REGISTRO_ABIERTO, true),
 };
 
 if (!config.sessionSecret || config.sessionSecret.length < 32) {

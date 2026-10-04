@@ -1,0 +1,56 @@
+/* Mind Videos — el panel del admin. Colores de styles.css. */
+body { background: var(--bg); }
+.adm-top { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: rgba(0, 0, 0, 0.92); z-index: 2; }
+.adm-crece { flex: 1; min-width: 0; }
+.adm { max-width: 1040px; margin: 0 auto; padding: 26px 16px 60px; }
+.adm h1 { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; }
+.adm h2 { font-size: 1.1rem; margin: 34px 0 12px; }
+.adm-sub { color: var(--text-muted); font-size: 0.9rem; margin: 6px 0 18px; }
+.adm-cifras { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.adm-cifra { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.adm-cifra b { display: block; font-size: 1.6rem; }
+.adm-cifra span { color: var(--text-muted); font-size: 0.82rem; }
+.adm-cifra.aviso { border-color: var(--gold); }
+.adm-filtros { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.adm-chip, .adm-boton { font: inherit; font-size: 0.84rem; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; cursor: pointer; text-decoration: none; }
+.adm-chip.activo { border-color: var(--gold); background: var(--gold-dim); }
+.adm-boton:hover, .adm-chip:hover { border-color: var(--border-hi); }
+.adm-boton.primario { background: var(--gold); border-color: var(--gold); color: #fff; font-weight: 600; }
+.adm-boton.peligro { color: var(--danger); }
+.adm-lista { display: flex; flex-direction: column; gap: 12px; }
+.adm-cuenta { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.adm-cuenta.pendiente { border-color: var(--gold); }
+.adm-cuenta.suspendida { opacity: 0.75; }
+.adm-cab { display: flex; align-items: center; gap: 12px; }
+.adm-cab b { display: flex; align-items: center; gap: 8px; }
+.adm-cab small { color: var(--text-muted); word-break: break-all; }
+.adm-avatar { width: 38px; height: 38px; border-radius: 10px; background: var(--gold-dim); color: var(--gold-hi);
+  display: grid; place-items: center; font-weight: 800; flex: 0 0 auto; }
+.adm-sello { font-size: 0.72rem; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+.adm-sello.activa { color: var(--success); }
+.adm-sello.pendiente { color: var(--gold-hi); border-color: var(--gold); }
+.adm-sello.suspendida { color: var(--danger); }
+.adm-sello.admin { color: var(--gold-hi); }
+.adm-datos { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0; color: var(--text-dim); font-size: 0.84rem; }
+.adm-datos .pasado { color: var(--danger); }
+.adm-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.adm-fila label { color: var(--text-muted); font-size: 0.82rem; }
+.adm-num, .adm-nota { font: inherit; font-size: 0.86rem; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+.adm-num { width: 100px; }
+.adm-nota { flex: 1; min-width: 180px; }
+.adm-videos { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.adm-videos > .adm-sub { grid-column: 1 / -1; margin: 0; }
+.adm-video { display: flex; flex-direction: column; gap: 6px; font-size: 0.84rem; }
+.adm-video video, .adm-sin { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; }
+.adm-sin { display: grid; place-items: center; color: var(--text-muted); border: 1px dashed var(--border); }
+.adm-video small { display: block; color: var(--text-muted); }
+.adm-tabla-caja { overflow-x: auto; }
+.adm-tabla { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.adm-tabla th, .adm-tabla td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.adm-tabla th { color: var(--text-muted); font-weight: 600; }
+.adm-tabla tr.fallo td { color: var(--danger); }
+@media (max-width: 600px) { .adm-cab { flex-wrap: wrap; } .adm h1 { font-size: 1.4rem; } }

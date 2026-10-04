@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# asvs-cuentas — monta, para y aparta el ESTUDIO de cada cuenta (root).
+#
+# El acceso (Node) no puede tocar systemd: deja peticiones en
+#   /opt/as-video-studio/login/datos/peticiones/<sello>-<accion>-<usuario>.json
+# y este script las cumple, en orden. Lo lanza `asvs-cuentas.path` en cuanto
+# aparece una (y se puede lanzar a mano: `asvs-cuentas`).
+#
+#   crear     carpeta de la cuenta + su `entorno` + `as-video-studio@<u>` en marcha
+#   parar     lo para y lo quita del arranque (suspendida)
+#   arrancar  lo vuelve a poner en marcha (reactivada)
+#   borrar    lo para y APARTA la carpeta a cuentas_borradas/ (no se destruye)
+#
+# Que es de cada cuenta y que se comparte: ver `entorno_de`.
+set -uo pipefail
+RAIZ=/opt/as-video-studio
+PETICIONES=$RAIZ/login/datos/peticiones
+CUENTAS=$RAIZ/cuentas
+REGISTRO=$RAIZ/login/datos/cuentas.log   # fuera de peticiones/: si no, la carpeta nunca estaria vacia
+ADMIN_ENTORNO=$RAIZ/datos/entorno
+
+mkdir -p "$CUENTAS" "$RAIZ/cuentas_borradas"
+chown studio:studio "$CUENTAS"
+chmod 711 "$CUENTAS"
+
+apuntar() { echo "$(date '+%F %T') $*" >> "$REGISTRO"; chown studio:studio "$REGISTRO" 2>/dev/null; }
+
+entorno_de() {   # usuario puerto -> el entorno de su estudio, por la salida
+  local u=$1 p=$2 D=$CUENTAS/$1/datos
+  # LO COMPARTIDO (de la instalacion): las claves y sesiones de Claude, el
+  # banco de musica/efectos/cache de imagenes, las tarifas, las fuentes, el
+  # navegador, el codigo y el modelo de Whisper.
+  grep -E '^(ESTUDIO_SECRETOS|ESTUDIO_ENV|ESTUDIO_BANCO|ESTUDIO_TARIFAS|ESTUDIO_MOTORES|ESTUDIO_FUENTES|ESTUDIO_EDGE|HOME|ESTUDIO_LOTES)=' "$ADMIN_ENTORNO"
+  # LO SUYO: proyectos, estilos (y sus laminas), recetas, ajustes, gasto...
+  # Todo lo que cuelga de la carpeta de ESTUDIO_PRESETS (ideas, taller, marca,
+  # piloto, avisos, clipping...) cae dentro de la suya por si solo.
+  cat <<EOF
+PUERTO=$p
+ESTUDIO_PROYECTOS=$D/proyectos
+ESTUDIO_PRESETS=$D/presets.json
+ESTUDIO_BANCO_PRESETS=$D/banco_presets
+ESTUDIO_RECETAS=$D/recetas.json
+ESTUDIO_AJUSTES=$D/ajustes.json
+ESTUDIO_ESTADISTICAS=$D/estadisticas.json
+ESTUDIO_COSTE_GLOBAL=$D/coste_global.jsonl
+ESTUDIO_BITACORA_GLOBAL=$D/bitacora_global.jsonl
+ESTUDIO_MODELOS=$RAIZ/datos/modelos
+ESTUDIO_API=http://127.0.0.1:$p
+ESTUDIO_CUENTA=$u
+ESTUDIO_CUENTA_FICHA=$RAIZ/login/datos/cuentas/$u.json
+ESTUDIO_COPIAS_APAGADAS=1
+EOF
+}
+
+crear() {
+  local u=$1 p=$2 C=$CUENTAS/$1
+  mkdir -p "$C/datos/proyectos" "$C/datos/banco_presets"
+  [ -f "$C/datos/recetas.json" ] || cp -a "$RAIZ/datos/recetas.json" "$C/datos/recetas.json" 2>/dev/null || true
+  entorno_de "$u" "$p" > "$C/entorno"
+  chown -R studio:studio "$C"
+  chmod 700 "$C"
+  systemctl enable --now "as-video-studio@$u" >/dev/null 2>&1 || return 1
+  # que conteste antes de decir que esta: si no, la pantalla entraria a un 502
+  for _ in $(seq 1 30); do
+    curl -s -o /dev/null "http://127.0.0.1:$p/api/proyectos" && return 0
+    sleep 1
+  done
+  return 1
+}
+
+procesar() {
+  local fichero=$1 accion u p
+  read -r accion u p < <(python3 - "$fichero" <<'EOF'
+import json, re, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print("x x 0"); sys.exit()
+accion, u, p = str(d.get("accion")), str(d.get("usuario")), int(d.get("puerto") or 0)
+ok = accion in ("crear", "parar", "arrancar", "borrar") and re.fullmatch(r"[a-z0-9_]{3,20}", u)
+print(f"{accion} {u} {p}" if ok else "x x 0")
+EOF
+)
+  if [ "$accion" = "x" ]; then apuntar "MAL $fichero (peticion no valida)"; return; fi
+  if [ "$accion" = "crear" ] && { [ "$p" -lt 8201 ] || [ "$p" -gt 8999 ]; }; then
+    apuntar "MAL $fichero (puerto $p fuera de 8201-8999)"; return
+  fi
+  case $accion in
+    crear)    if crear "$u" "$p"; then apuntar "OK crear $u :$p"; else apuntar "FALLO crear $u :$p"; fi ;;
+    parar)    systemctl disable --now "as-video-studio@$u" >/dev/null 2>&1; apuntar "OK parar $u" ;;
+    arrancar) systemctl enable --now "as-video-studio@$u" >/dev/null 2>&1 && apuntar "OK arrancar $u" || apuntar "FALLO arrancar $u" ;;
+    borrar)   systemctl disable --now "as-video-studio@$u" >/dev/null 2>&1
+              [ -d "$CUENTAS/$u" ] && mv "$CUENTAS/$u" "$RAIZ/cuentas_borradas/$u-$(date +%Y%m%d-%H%M%S)"
+              apuntar "OK borrar $u (apartada)" ;;
+  esac
+}
+
+shopt -s nullglob
+for f in $(ls "$PETICIONES"/*.json 2>/dev/null | sort); do
+  procesar "$f"
+  rm -f "$f"
+done

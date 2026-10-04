@@ -14,6 +14,8 @@ const SqliteStore = require('better-sqlite3-session-store')(session);
 const config = require('./lib/config');
 const { stmt } = require('./lib/db');
 const authRoutes = require('./routes/auth');
+const cuentasRoutes = require('./routes/cuentas');
+const cuentas = require('./lib/cuentas');
 const { requireAuth, redirectIfAuthenticated } = require('./lib/middleware');
 
 const app = express();
@@ -87,6 +89,7 @@ app.use('/js',  express.static(path.join(PUBLIC_DIR, 'js'),  STATIC_REVALIDATE))
 
 // ---------------------------------------------------------------- API
 app.use('/api', authRoutes);
+app.use('/api', cuentasRoutes.router);
 
 app.get('/api/health', (req, res) => {
   let users = null;
@@ -99,11 +102,24 @@ app.get('/api/health', (req, res) => {
 // y DE QUIEN es --, porque cada cuenta tiene su propio proceso de Studio y hay
 // que enrutar al suyo. El nombre viaja en una cabecera que nginx recoge con
 // `auth_request_set`; el cuerpo va vacio a proposito.
+//
+// Y A QUE PUERTO (03-10-2026): cada cuenta tiene su estudio (lib/cuentas.js) y
+// nginx lo recoge de X-Studio-Port. Se mira la cuenta EN CADA PETICION: una
+// suspendida deja de entrar al instante, no cuando caduque su sesion. Una
+// aprobada cuyo estudio aun se esta montando recibe 403 (va a /studio, que lo
+// explica).
 app.get('/api/_auth', (req, res) => {
   if (!req.session || !req.session.userId || !req.session.username) {
     return res.status(401).end();
   }
-  res.set('X-Studio-User', req.session.username);
+  const user = stmt.findById.get(req.session.userId);
+  if (!user || !user.is_active || (user.status || 'activa') !== 'activa') {
+    return res.status(401).end();
+  }
+  const puerto = cuentas.puertoDe(user);
+  if (!puerto || !cuentas.montada(user)) return res.status(403).end();
+  res.set('X-Studio-User', user.username);
+  res.set('X-Studio-Port', String(puerto));
   return res.status(200).end();
 });
 
@@ -125,6 +141,18 @@ for (const puerta of ['/login', '/v2/login']) {
 
 app.get('/studio', requireAuth, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'studio.html'));
+});
+
+// CREAR CUENTA: publica (nace pendiente de aprobar).
+app.get('/registro', redirectIfAuthenticated, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'registro.html'));
+});
+
+// EL PANEL DEL ADMIN: solo la cuenta admin; las demas, a su estudio.
+app.get('/admin', requireAuth, (req, res) => {
+  const user = stmt.findById.get(req.session.userId);
+  if (!user || user.role !== 'admin') return res.redirect('/');
+  return res.sendFile(path.join(PUBLIC_DIR, 'admin.html'));
 });
 
 // ---------------------------------------------------------------- errores

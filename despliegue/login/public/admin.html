@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="dark">
+  <title>Panel de admin · Mind Videos</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="/css/styles.css?v=10">
+  <link rel="stylesheet" href="/css/admin.css?v=1">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <header class="adm-top">
+    <span class="brand brand--mind">
+      <span class="brand__mark" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><ellipse cx="32" cy="32" rx="27" ry="15" transform="rotate(32 32 32)" stroke="#a78bfa" stroke-width="3.6"/><ellipse cx="32" cy="32" rx="27" ry="15" transform="rotate(-32 32 32)" stroke="#fff" stroke-width="3.6"/><path d="M28 24.5 40 32l-12 7.5z" fill="#a78bfa"/></svg></span>
+      <span class="brand__text"><b>mind</b><small>admin</small></span>
+    </span>
+    <span class="adm-crece"></span>
+    <a class="adm-boton" href="/">← Volver a mi estudio</a>
+  </header>
+
+  <main class="adm">
+    <h1>Panel de administración</h1>
+    <p class="adm-sub">Las cuentas de tu estudio: aprobar, poner topes de gasto, revisar lo que crean y suspender si hace falta.</p>
+
+    <div class="alert alert--error" id="error" role="alert"><span id="errorText"></span></div>
+
+    <section class="adm-cifras" id="cifras"></section>
+
+    <div class="adm-filtros" id="filtros"></div>
+    <section id="cuentas" class="adm-lista"><p class="adm-sub">cargando…</p></section>
+
+    <h2>Últimos accesos</h2>
+    <div class="adm-tabla-caja"><table class="adm-tabla" id="eventos"></table></div>
+  </main>
+
+  <script src="/js/admin.js?v=1"></script>
+</body>
+</html>

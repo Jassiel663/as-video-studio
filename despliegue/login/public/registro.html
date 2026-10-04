@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="dark">
+  <title>Crear cuenta · Mind Videos</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="/css/styles.css?v=10">
+  <link rel="stylesheet" href="/css/login.css?v=10">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <div class="aurora" aria-hidden="true"></div>
+
+  <main class="login">
+    <div class="login__inner">
+      <div class="login__brand">
+        <span class="brand brand--mind">
+          <span class="brand__mark" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><ellipse cx="32" cy="32" rx="27" ry="15" transform="rotate(32 32 32)" stroke="#a78bfa" stroke-width="3.6"/><ellipse cx="32" cy="32" rx="27" ry="15" transform="rotate(-32 32 32)" stroke="#fff" stroke-width="3.6"/><path d="M28 24.5 40 32l-12 7.5z" fill="#a78bfa"/></svg></span>
+          <span class="brand__text"><b>mind</b><small>videos</small></span>
+        </span>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <h1 class="card__title">Crea tu cuenta</h1>
+          <p class="card__sub">Tu propio estudio de vídeos con IA.</p>
+        </div>
+
+        <div class="alert alert--error" id="error" role="alert" aria-live="assertive">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/>
+          </svg>
+          <span id="errorText"></span>
+        </div>
+
+        <div class="hecho is-hidden" id="hecho" role="status">
+          <b>✅ Cuenta creada</b>
+          <p id="hechoTexto"></p>
+          <a class="btn" href="/login">Ir a iniciar sesión</a>
+        </div>
+
+        <form id="registroForm" novalidate autocomplete="on">
+          <div class="field">
+            <label class="field__label" for="nombre">Tu nombre</label>
+            <input class="input" type="text" id="nombre" name="nombre" autocomplete="name" maxlength="60">
+          </div>
+          <div class="field">
+            <label class="field__label" for="usuario">Usuario</label>
+            <input class="input" type="text" id="usuario" name="usuario" autocomplete="username"
+                   required minlength="3" maxlength="20" pattern="[a-z0-9_]{3,20}" placeholder="letras, números o _">
+          </div>
+          <div class="field">
+            <label class="field__label" for="correo">Correo</label>
+            <input class="input" type="email" id="correo" name="correo" autocomplete="email" required maxlength="120">
+          </div>
+          <div class="field">
+            <label class="field__label" for="password">Contraseña (mínimo 12 caracteres)</label>
+            <input class="input" type="password" id="password" name="password" autocomplete="new-password" required minlength="12">
+          </div>
+          <div class="field">
+            <label class="field__label" for="password2">Repite la contraseña</label>
+            <input class="input" type="password" id="password2" name="password2" autocomplete="new-password" required minlength="12">
+          </div>
+          <label class="acepto">
+            <input type="checkbox" id="acepto" name="acepto">
+            <span>Acepto usar el estudio solo con contenido propio o con permiso, sin nada ilegal, de odio ni engaños.
+              El administrador puede revisar lo que se crea y suspender la cuenta.</span>
+          </label>
+          <button class="btn" type="submit" id="submit"><span id="submitText">Crear cuenta</span></button>
+        </form>
+
+        <p class="login__foot">¿Ya tienes cuenta? <a href="/login">Inicia sesión</a></p>
+      </div>
+      <p class="login__legal">Las cuentas nuevas se activan cuando el administrador las aprueba.</p>
+    </div>
+  </main>
+
+  <script src="/js/registro.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+[Unit]
+Description=Mind Videos — monta y para los estudios de las cuentas
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/asvs-cuentas

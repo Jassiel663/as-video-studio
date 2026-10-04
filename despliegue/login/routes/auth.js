@@ -13,8 +13,10 @@ const rateLimit = require('express-rate-limit');
 
 const config = require('../lib/config');
 const { elegirCuenta, urlPanelHostinger } = require('../lib/acceso');
+const { verifyPassword } = require('../lib/auth');
+const cuentas = require('../lib/cuentas');
 const {
-  stmt, minutosDeBloqueo, registrarFallo, bloquearAcceso, limpiarBloqueo,
+  stmt, minutosDeBloqueo, registrarFallo, bloquearAcceso, limpiarBloqueo, lockRemainingMinutes,
 } = require('../lib/db');
 const {
   ensureCsrfToken, verifyCsrf, requireAuth, destinoTrasLogin,
@@ -57,8 +59,49 @@ function publicUser(user) {
     displayName: user.display_name || user.username,
     email: user.email || null,
     role: user.role,
+    status: user.status || 'activa',
     lastLoginAt: user.last_login_at || null,
   };
+}
+
+/* CON USUARIO (o correo) Y CONTRASENA: las cuentas de /registro. El bloqueo
+   por intentos va POR CUENTA (con el registro abierto, uno global dejaria a
+   cualquiera cerrarle la puerta a todos), y el estado se dice SOLO si la
+   contrasena es buena: asi no se puede preguntar si una cuenta existe. */
+async function cuentaConUsuario(req, res, identificador, password) {
+  const id = identificador.trim();
+  const user = stmt.findByUsername.get(id.toLowerCase()) || stmt.findByEmail.get(id.toLowerCase());
+  if (user && lockRemainingMinutes(user) > 0) {
+    audit(req, { username: user.username, userId: user.id, success: false, reason: 'cuenta_bloqueada' });
+    res.status(429).json({ ok: false,
+      error: `Demasiados intentos. Vuelve a intentarlo en ${lockRemainingMinutes(user)} min.` });
+    return null;
+  }
+  const cuadra = await verifyPassword(password, user ? user.password_hash : 'scrypt$32768$8$1$00$00');
+  if (!user || !cuadra || user.status === 'borrada') {
+    if (user) {
+      stmt.registerFailure.run(user.id);
+      const fila = stmt.findById.get(user.id);
+      if ((fila.failed_attempts || 0) >= config.maxFailedAttempts) {
+        stmt.lockAccount.run(`+${config.lockoutMinutes} minutes`, user.id);
+      }
+    }
+    audit(req, { username: id.slice(0, 60), userId: user && user.id, success: false, reason: 'usuario_o_password' });
+    res.status(401).json({ ok: false, error: 'Usuario o contraseña incorrectos.' });
+    return null;
+  }
+  if (user.status === 'pendiente') {
+    audit(req, { username: user.username, userId: user.id, success: false, reason: 'pendiente' });
+    res.status(403).json({ ok: false,
+      error: 'Tu cuenta está pendiente de aprobación. Te avisaremos cuando esté lista.' });
+    return null;
+  }
+  if (user.status === 'suspendida' || !user.is_active) {
+    audit(req, { username: user.username, userId: user.id, success: false, reason: 'suspendida' });
+    res.status(403).json({ ok: false, error: 'Esta cuenta está suspendida. Habla con el administrador.' });
+    return null;
+  }
+  return user;
 }
 
 // El cliente pide el token antes de enviar el formulario. Viaja con el ADEMAS
@@ -75,6 +118,7 @@ router.get('/csrf', (req, res) => {
 
 router.post('/login', loginLimiter, verifyCsrf, async (req, res) => {
   const password = String((req.body && req.body.password) || '');
+  const identificador = String((req.body && req.body.usuario) || '');
 
   // POR DONDE SE ENTRO. Lo manda la pantalla del login (lo saca de su propia
   // direccion) y aqui se valida: de fabrica, la raiz. Se calcula ANTES de
@@ -86,6 +130,12 @@ router.post('/login', loginLimiter, verifyCsrf, async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Escribe la contrasena.' });
   }
 
+  if (identificador.trim()) {
+    const cuenta = await cuentaConUsuario(req, res, identificador, password);
+    if (!cuenta) return undefined;
+    return abrirSesion(req, res, cuenta, destino);
+  }
+
   const bloqueado = minutosDeBloqueo();
   if (bloqueado > 0) {
     audit(req, { success: false, reason: 'acceso_bloqueado' });
@@ -95,7 +145,9 @@ router.post('/login', loginLimiter, verifyCsrf, async (req, res) => {
     });
   }
 
-  const cuentas = stmt.listActive.all();
+  // SOLO CONTRASENA: la puerta de siempre, para las cuentas de antes (las de
+  // consola, sin correo) y la del admin. Las de /registro entran con usuario.
+  const cuentas = stmt.listActive.all().filter((c) => c.role === 'admin' || !c.email);
   const user = await elegirCuenta(password, cuentas);
 
   if (!user) {
@@ -112,6 +164,11 @@ router.post('/login', loginLimiter, verifyCsrf, async (req, res) => {
     return res.status(401).json({ ok: false, error });
   }
 
+  limpiarBloqueo();
+  return abrirSesion(req, res, user, destino);
+});
+
+function abrirSesion(req, res, user, destino) {
   // Login correcto. Regeneramos la sesion para evitar session fixation:
   // el identificador que tuviera el atacante antes del login deja de valer.
   req.session.regenerate((err) => {
@@ -121,11 +178,11 @@ router.post('/login', loginLimiter, verifyCsrf, async (req, res) => {
     }
     req.session.userId = user.id;
     req.session.username = user.username;
+    req.session.role = user.role;
     req.session.loggedInAt = new Date().toISOString();
     ensureCsrfToken(req);
 
     stmt.registerSuccess.run(user.id);
-    limpiarBloqueo();
     audit(req, { username: user.username, userId: user.id, success: true, reason: 'ok' });
 
     req.session.save((saveErr) => {
@@ -138,7 +195,7 @@ router.post('/login', loginLimiter, verifyCsrf, async (req, res) => {
       res.json({ ok: true, redirect: destino, user: publicUser(user) });
     });
   });
-});
+}
 
 router.post('/logout', verifyCsrf, (req, res) => {
   req.session.destroy(() => {
@@ -154,7 +211,8 @@ router.get('/me', requireAuth, (req, res) => {
       res.status(401).json({ ok: false, error: 'Sesion no valida.' })
     );
   }
-  res.json({ ok: true, user: publicUser(user), loggedInAt: req.session.loggedInAt || null });
+  res.json({ ok: true, user: publicUser(user), loggedInAt: req.session.loggedInAt || null,
+             estudio: { listo: !!(cuentas.puertoDe(user) && cuentas.montada(user)) } });
 });
 
 module.exports = router;

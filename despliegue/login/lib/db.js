@@ -58,6 +58,24 @@ db.exec(`
   INSERT OR IGNORE INTO bloqueo (id) VALUES (1);
 `);
 
+// LAS CUENTAS DE OTRAS PERSONAS (lib/cuentas.js): estado, puerto de su
+// estudio, tope de gasto al mes y una nota del admin. Se anaden si faltan, asi
+// una base de datos de antes sigue valiendo tal cual.
+{
+  const columnas = new Set(db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
+  const nuevas = {
+    status: "TEXT NOT NULL DEFAULT 'activa'",          // pendiente | activa | suspendida | borrada
+    port: 'INTEGER',
+    tope_mes_usd: 'REAL',
+    nota: 'TEXT',
+    approved_at: 'TEXT',
+  };
+  for (const [nombre, tipo] of Object.entries(nuevas)) {
+    if (!columnas.has(nombre)) db.exec(`ALTER TABLE users ADD COLUMN ${nombre} ${tipo}`);
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE) WHERE email IS NOT NULL');
+}
+
 const stmt = {
   findByUsername: db.prepare('SELECT * FROM users WHERE username = ?'),
   findById:       db.prepare('SELECT * FROM users WHERE id = ?'),
@@ -116,6 +134,28 @@ const stmt = {
     UPDATE bloqueo SET failed_attempts = 0, locked_until = NULL, updated_at = datetime('now')
     WHERE id = 1
   `),
+
+  // ---- las cuentas (lib/cuentas.js) ----
+  findByEmail: db.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE'),
+  listAdmins: db.prepare("SELECT * FROM users WHERE role = 'admin' AND is_active = 1 ORDER BY id"),
+  listAll: db.prepare(`
+    SELECT id, username, display_name, email, role, is_active, status, port, tope_mes_usd, nota,
+           approved_at, last_login_at, created_at
+    FROM users WHERE status != 'borrada' ORDER BY (status = 'pendiente') DESC, id`),
+  insertCuenta: db.prepare(`
+    INSERT INTO users (username, display_name, email, password_hash, role, is_active, status, tope_mes_usd)
+    VALUES (@username, @display_name, @email, @password_hash, 'user', 0, 'pendiente', @tope_mes_usd)
+  `),
+  setStatus: db.prepare(`
+    UPDATE users SET status = @status, is_active = @is_active, updated_at = datetime('now') WHERE id = @id
+  `),
+  approve: db.prepare(`
+    UPDATE users SET status = 'activa', is_active = 1, port = @port, approved_at = datetime('now'),
+                     updated_at = datetime('now') WHERE id = @id
+  `),
+  setTope: db.prepare("UPDATE users SET tope_mes_usd = ?, updated_at = datetime('now') WHERE id = ?"),
+  setNota: db.prepare("UPDATE users SET nota = ?, updated_at = datetime('now') WHERE id = ?"),
+  countPending: db.prepare("SELECT COUNT(*) AS n FROM users WHERE status = 'pendiente'"),
 };
 
 /** Devuelve los minutos que le quedan de bloqueo, o 0 si no esta bloqueado. */

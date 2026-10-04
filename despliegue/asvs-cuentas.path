@@ -1,0 +1,10 @@
+[Unit]
+Description=Mind Videos — vigila las peticiones de cuentas del acceso
+
+[Path]
+# El acceso (Node) deja aqui una peticion al aprobar, suspender o borrar una
+# cuenta; en cuanto hay alguna, systemd lanza asvs-cuentas.service (root).
+DirectoryNotEmpty=/opt/as-video-studio/login/datos/peticiones
+
+[Install]
+WantedBy=multi-user.target

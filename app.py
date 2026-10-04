@@ -776,6 +776,85 @@ app = FastAPI(title="Estudio de Video", version=VERSION,
               description="API del estudio: grafo de build, pasos y revision.")
 
 
+# ==========================================================================
+# EL ESTUDIO DE UNA CUENTA (despliegue/asvs-cuentas, login/lib/cuentas.js)
+#
+# Con ESTUDIO_CUENTA puesta, este proceso es el estudio de OTRA persona: usa las
+# claves de la instalacion pero no las ve ni las cambia, no toca tarifas, saldo
+# ni copias, y deja de generar cuando llega a su TOPE DE GASTO del mes (lo pone
+# el admin en el panel; se lee de ESTUDIO_CUENTA_FICHA en cada peticion, asi un
+# cambio de tope vale al instante). Sin la variable, todo es como siempre.
+# ==========================================================================
+CUENTA = (os.environ.get("ESTUDIO_CUENTA") or "").strip()
+CUENTA_FICHA = (os.environ.get("ESTUDIO_CUENTA_FICHA") or "").strip()
+
+#: Lo que una cuenta NO puede hacer: es de la instalacion (del admin).
+SOLO_ADMIN = [("PUT", re.compile(r"^/api/claves$")), ("POST", re.compile(r"^/api/claves/")),
+              ("PUT", re.compile(r"^/api/coste/tarifas$")), ("PUT", re.compile(r"^/api/saldo$")),
+              ("POST", re.compile(r"^/api/copias")), ("PUT", re.compile(r"^/api/ajustes$"))]
+
+#: Lo que GASTA DINERO (imagenes, voz, animacion): se para al llegar al tope.
+DE_PAGO = re.compile(
+    r"^/api/proyectos/[^/]+/(generar|pasos/[^/]+/ejecutar|pestanas/[^/]+/generar|miniaturas(/\d+/rehacer)?"
+    r"|voz/previsualizar|voz/secciones/[^/]+/regrabar|repaso/imagenes|moodboard)$"
+    r"|^/api/presets-light(/imagenes|/[^/]+/regenerar|/[^/]+/canal/[^/]+(/[^/]+/rehacer)?|/[^/]+/voz/previsualizar)?$")
+
+
+def ficha_cuenta():
+    """{usuario, tope_mes_usd, ...} de esta cuenta, o {} en la del admin."""
+    if not CUENTA:
+        return {}
+    try:
+        with open(CUENTA_FICHA, "r", encoding="utf-8") as fh:
+            return json.load(fh) or {}
+    except (OSError, ValueError):
+        return {"usuario": CUENTA}
+
+
+def gastado_este_mes():
+    from nucleo import coste as _coste
+    mes = time.strftime("%Y-%m")
+    total = 0.0
+    try:
+        with open(_coste.RUTA_GLOBAL, "r", encoding="utf-8") as fh:
+            for linea in fh:
+                try:
+                    d = json.loads(linea)
+                except ValueError:
+                    continue
+                if str(d.get("momento") or "").startswith(mes):
+                    total += float(d.get("usd") or 0)
+    except OSError:
+        pass
+    return round(total, 2)
+
+
+@app.middleware("http")
+async def _limites_de_la_cuenta(peticion, siguiente):
+    if CUENTA and peticion.method in ("POST", "PUT", "DELETE"):
+        ruta = peticion.url.path
+        for metodo, patron in SOLO_ADMIN:
+            if peticion.method == metodo and patron.search(ruta):
+                return _respuesta_error(403, "Esto lo gestiona el administrador del estudio.")
+        if peticion.method == "POST" and DE_PAGO.search(ruta):
+            tope = ficha_cuenta().get("tope_mes_usd")
+            if tope is not None:
+                gastado = gastado_este_mes()
+                if gastado >= float(tope):
+                    return _respuesta_error(402, (
+                        f"Has llegado al límite de gasto de este mes ({gastado:.2f} $ de {float(tope):.2f} $). "
+                        f"Habla con el administrador para ampliarlo."), {"tope": True})
+    return await siguiente(peticion)
+
+
+@app.get("/api/cuenta")
+def leer_cuenta():
+    """De quien es este estudio y como va su gasto del mes (la cuenta admin: cuenta = '')."""
+    ficha = ficha_cuenta()
+    return {"cuenta": CUENTA, "admin": not CUENTA, "tope_mes_usd": ficha.get("tope_mes_usd"),
+            "gastado_mes": gastado_este_mes()}
+
+
 @app.exception_handler(ErrorApi)
 async def _manejar_error_api(peticion, fallo):
     return _respuesta_error(fallo.codigo, fallo.mensaje, fallo.extra)

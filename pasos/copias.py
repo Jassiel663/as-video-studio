@@ -40,6 +40,9 @@ except ImportError:  # ejecutado con la carpeta pasos directamente en sys.path
 
 DATOS = os.path.dirname(os.path.abspath(presets_canal.FICHERO))
 CARPETA = os.environ.get("ESTUDIO_COPIAS") or os.path.join(os.path.dirname(DATOS), "copias")
+#: Los estudios de las OTRAS cuentas (despliegue/asvs-cuentas): van en la misma
+#: copia, dentro de `_cuentas/`, con las mismas exclusiones.
+CUENTAS = os.environ.get("ESTUDIO_COPIAS_CUENTAS") or os.path.join(os.path.dirname(DATOS), "cuentas")
 HORA = int(os.environ.get("ESTUDIO_COPIAS_HORA") or 4)       # 04:xx del servidor
 EXCLUIR = ["proyectos/*/pasos/render/", "proyectos/*/pasos/*/trabajo/", "modelos/",
            "trabajados/_subidas/", "*.parcial/", "*.tmp", "*.marca.mp4", "*.viral.mp4"]
@@ -118,6 +121,15 @@ def hacer(manual=False):
         if proceso.returncode not in (0, 24):
             shutil.rmtree(parcial, ignore_errors=True)
             raise RuntimeError(f"rsync fallo ({proceso.returncode}): {proceso.stderr[-300:]}")
+        if os.path.isdir(CUENTAS) and os.listdir(CUENTAS):
+            orden_c = ["rsync", "-a", "--stats"] + [f"--exclude={e}" for e in EXCLUIR]
+            if anteriores and os.path.isdir(os.path.join(CARPETA, anteriores[-1], "_cuentas")):
+                orden_c.append(f"--link-dest={os.path.join(CARPETA, anteriores[-1], '_cuentas')}")
+            otra = subprocess.run(orden_c + [CUENTAS.rstrip("/") + "/", os.path.join(parcial, "_cuentas") + "/"],
+                                  capture_output=True, text=True, timeout=6 * 3600)
+            if otra.returncode not in (0, 24):
+                shutil.rmtree(parcial, ignore_errors=True)
+                raise RuntimeError(f"rsync de las cuentas fallo ({otra.returncode}): {otra.stderr[-300:]}")
         with open(os.path.join(parcial, ".copia.json"), "w", encoding="utf-8") as fh:
             json.dump({"fecha": time.strftime("%Y-%m-%dT%H:%M:%S"), "manual": manual,
                        "segundos": round(time.time() - arranque, 1),

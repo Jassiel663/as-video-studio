@@ -5050,16 +5050,38 @@ function sliderRitmo(valor, alCambiar) {
  * existen: la pastilla se queda oculta y la barra se ve como siempre. Por eso
  * el fallo no se ensena en ningun sitio; que no haya login no es un error.
  */
+/* QUIEN ES Y QUE ES ESTE ESTUDIO. `rol` viene del acceso (admin: la cuenta de
+   siempre, que ve el panel de admin); `estudio` de este proceso: si es el de
+   OTRA cuenta (`cuenta` no vacia), su gasto del mes y su tope, y entonces se
+   esconde lo que es de la instalacion (claves, saldo, copias). */
+var CUENTA_INFO = { rol: '', nombre: '', estudio: null };
+var ZONAS_SOLO_ADMIN = ['copias', 'presupuesto'];
+
+function esCuentaInvitada() { return !!(CUENTA_INFO.estudio && CUENTA_INFO.estudio.cuenta); }
+
 async function cargarCuenta() {
   try {
+    const r = await fetch(`${BASE}/api/cuenta`, { credentials: 'same-origin' });
+    if (r.ok) CUENTA_INFO.estudio = await r.json();
+  } catch (e) { /* un estudio viejo sin la ruta: como siempre */ }
+  if (esCuentaInvitada()) {
+    document.body.classList.add('cuenta-invitada');
+    if (ZONAS_SOLO_ADMIN.includes(zonaLight())) irAZonaLight('inicio');
+  }
+  try {
     const r = await fetch('/api/me', { credentials: 'same-origin' });
-    if (!r.ok) return;
-    const d = await r.json();
-    const nombre = ((d || {}).user || {}).username;
-    if (!nombre) return;
-    $('#cuenta-nombre').textContent = nombre;
-    $('#cuenta').classList.remove('oculto');
+    if (r.ok) {
+      const d = await r.json();
+      const usuario = (d || {}).user || {};
+      CUENTA_INFO.rol = usuario.role || '';
+      CUENTA_INFO.nombre = usuario.displayName || usuario.username || '';
+      if (usuario.username) {
+        $('#cuenta-nombre').textContent = usuario.username;
+        $('#cuenta').classList.remove('oculto');
+      }
+    }
   } catch (e) { /* sin login delante: nada que ensenar */ }
+  try { pintarLateralLight(); } catch (e) { /* aun no hay menu */ }
 }
 
 
@@ -5519,11 +5541,17 @@ function pintarLateralLight() {
   cargarPiloto();
   vaciar(lateral);
   lateral.appendChild(h('div', { clase: 'lateral-marca' }, marcaMind()));
-  const nombre = ($('#cuenta-nombre') && $('#cuenta-nombre').textContent.trim()) || '';
+  const nombre = CUENTA_INFO.nombre || ($('#cuenta-nombre') && $('#cuenta-nombre').textContent.trim()) || '';
+  const est = CUENTA_INFO.estudio || {};
+  const gasto = esCuentaInvitada()
+    ? `Este mes: ${Number(est.gastado_mes || 0).toFixed(2)} $` + (est.tope_mes_usd != null ? ` de ${Number(est.tope_mes_usd).toFixed(2)} $` : '')
+    : (nombre || 'Espacio personal');
   lateral.appendChild(h('div', { clase: 'lateral-espacio' },
     h('span', { clase: 'avatar' }, (nombre || 'M').slice(0, 1).toUpperCase()),
-    h('span', { clase: 'crece' }, h('b', {}, 'Mi estudio'), h('small', {}, nombre || 'Espacio personal'))));
-  ZONAS_MIND.forEach(({ grupo, zonas }) => {
+    h('span', { clase: 'crece' }, h('b', {}, esCuentaInvitada() ? (nombre || 'Mi estudio') : 'Mi estudio'), h('small', {}, gasto))));
+  ZONAS_MIND.forEach(({ grupo, zonas: todas }) => {
+    const zonas = esCuentaInvitada() ? todas.filter(([id]) => !ZONAS_SOLO_ADMIN.includes(id)) : todas;
+    if (!zonas.length) return;
     lateral.appendChild(h('div', { clase: 'lateral-grupo' }, grupo));
     zonas.forEach(([id, texto]) => {
       const boton = h('button', {
@@ -5544,7 +5572,13 @@ function pintarLateralLight() {
   lateral.appendChild(nube);
   const instalar = botonInstalarApp();
   if (instalar) lateral.appendChild(instalar);
-  const config = h('button', { clase: 'lateral-item', onclick: () => { document.body.classList.remove('menu-abierto'); conmutarConfig(); } });
+  if (CUENTA_INFO.rol === 'admin' && !esCuentaInvitada()) {
+    const panel = h('a', { clase: 'lateral-item panel-admin', href: '/admin' });
+    panel.appendChild(iconoNav('M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z M9 12l2 2 4-4'));
+    panel.appendChild(h('span', { clase: 'crece' }, 'Panel de admin'));
+    lateral.appendChild(panel);
+  }
+  const config = h('button', { clase: 'lateral-item solo-admin', onclick: () => { document.body.classList.remove('menu-abierto'); conmutarConfig(); } });
   config.appendChild(iconoNav(ICONOS_MIND.config));
   config.appendChild(h('span', { clase: 'crece' }, 'Configuración'));
   lateral.appendChild(config);

@@ -94,3 +94,15 @@
 @media (max-width: 420px) {
   .card { padding: 28px 22px 26px; }
 }
+
+/* ---- crear cuenta (registro.html) y el enlace del login ---- */
+.login__foot a { color: var(--gold-hi); text-decoration: underline; text-underline-offset: 2px; }
+.acepto { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 18px; font-size: 0.8rem;
+  line-height: 1.5; color: var(--text-muted); cursor: pointer; }
+.acepto input { margin-top: 3px; accent-color: var(--gold); }
+.hecho { text-align: center; line-height: 1.6; }
+.hecho p { color: var(--text-dim); margin: 10px 0 18px; font-size: 0.9rem; }
+.hecho .btn { display: inline-flex; text-decoration: none; }
+
+/* esperando al estudio (studio.html) */
+.espera { display: flex; justify-content: center; margin: 8px 0 20px; }
