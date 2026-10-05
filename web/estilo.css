@@ -3115,3 +3115,23 @@ a.lateral-item.panel-admin { text-decoration: none; color: var(--acento); }
 .tutorial-paso { display: flex; gap: 16px; align-items: flex-start; }
 .tutorial-paso .bienvenida-icono { font-size: 30px; }
 .tutorial-paso h2 { margin: 0 0 4px; font-size: 17px; }
+
+/* creditos (vista previa) */
+#btn-creditos { white-space: nowrap; }
+.creditos-saldo { display: flex; align-items: center; gap: 12px; padding: 16px 18px; margin: 12px 0 18px;
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 14px; }
+.creditos-saldo small { display: block; color: var(--tenue); font-size: 12px; }
+.creditos-saldo b { font-size: 28px; }
+.creditos-paquetes { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.creditos-paquete { position: relative; background: var(--panel); border: 1px solid var(--linea); border-radius: 14px;
+  padding: 18px; display: flex; flex-direction: column; gap: 6px; }
+.creditos-paquete.destacado { border-color: var(--acento); box-shadow: 0 0 0 1px var(--acento) inset; }
+.creditos-paquete h3 { margin: 0; font-size: 17px; }
+.creditos-precio { font-size: 30px; font-weight: 800; }
+.creditos-cantidad { font-weight: 600; color: var(--acento); }
+.creditos-sello { position: absolute; top: -10px; right: 14px; background: var(--acento); color: #fff;
+  font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.creditos-tabla { display: flex; flex-direction: column; border: 1px solid var(--linea); border-radius: 12px; overflow: hidden; }
+.creditos-fila { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--linea-suave); }
+.creditos-fila:last-child { border-bottom: none; }
+.creditos-ico { width: 24px; text-align: center; }

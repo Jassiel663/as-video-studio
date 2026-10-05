@@ -5449,6 +5449,7 @@ function marcaMind(clase) {
 }
 
 const ICONOS_MIND = {
+  creditos: 'M6 3h12l3 6-9 12L3 9z M3 9h18 M9 3l3 6 3-6 M12 9v12',
   ajustes: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19 12l2-1-1-3-2 .3-1.3-1.3.3-2-3-1-1 2h-2l-1-2-3 1 .3 2L6 7.7 4 7.4l-1 3 2 1v1.2l-2 1 1 3 2-.3 1.3 1.3-.3 2 3 1 1-2h2l1 2 3-1-.3-2 1.3-1.3 2 .3 1-3-2-1z',
   tutorial: 'M4 5h16v12H8l-4 3z M8 9h8 M8 13h5',
   clipping: 'M6 4a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z M6 15a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z M8 8l12 9 M8 16l12-9',
@@ -5490,7 +5491,7 @@ const ZONAS_MIND = [
   { grupo: 'Investigar', zonas: [
     ['ideas', 'Ideas y nicho'], ['competencia', 'Competencia']] },
   { grupo: 'Producción', zonas: [
-    ['piloto', 'Piloto automático'], ['avisos', 'Avisos'], ['cola', 'Cola'],
+    ['creditos', 'Créditos'], ['piloto', 'Piloto automático'], ['avisos', 'Avisos'], ['cola', 'Cola'],
     ['presupuesto', 'Presupuesto'], ['copias', 'Copias de seguridad'], ['papelera', 'Papelera']] },
   { grupo: 'Ayuda', zonas: [['tutorial', 'Cómo se usa'], ['app', 'App en el celular'], ['ajustes', 'Ajustes']] },
 ];
@@ -6677,6 +6678,7 @@ function vistaGaleriaLight() {
   if (zona === 'copias') return vistaCopiasZona();
   if (zona === 'app') return vistaAppZona();
   if (zona === 'ajustes') return vistaAjustesZona();
+  if (zona === 'creditos') return vistaCreditosZona();
   if (zona === 'tutorial') return vistaTutorialZona();
   if (zona === 'clipping') return vistaClippingZona();
   if (zona === 'avisos') return vistaAvisosZona();
@@ -14534,6 +14536,11 @@ function pintarCampana() {
     const conf = $('#btn-config');
     cab.insertBefore(b, conf || null);
   }
+  // LOS CREDITOS, al lado de la campana (vista previa: todavia no se cobra)
+  if (!$('#btn-creditos')) {
+    cab.insertBefore(h('button', { id: 'btn-creditos', clase: 'mini fantasma', title: 'Créditos',
+      onclick: () => irAZonaLight('creditos') }, '💎 Créditos'), b);
+  }
   vaciar(b);
   b.appendChild(iconoNav('M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10 21h4'));
   const n = (AVISOS.datos || {}).sin_leer || 0;
@@ -15621,5 +15628,56 @@ function vistaAjustesZona() {
     h('div', { clase: 'fila' },
       h('button', { clase: 'mini', onclick: () => abrirBienvenida(0) }, 'Ver el tutorial'),
       h('button', { clase: 'mini fantasma peligro', onclick: () => salirDeStudio() }, 'Cerrar sesión'))));
+  return caja;
+}
+
+/* ================================================================ CREDITOS
+ *
+ * VISTA PREVIA del sistema de creditos (todavia no se cobra ni se descuenta):
+ * los paquetes y lo que cuesta cada cosa. 1 credito = 1 centimo de dolar.
+ * Cuando se active, cada accion de pago dira sus creditos antes de empezar y
+ * se recargara con tarjeta (Stripe) o a mano desde el panel de admin.
+ */
+var PAQUETES_CREDITOS = [
+  { id: 'inicial', nombre: 'Inicial', precio: 9.99, creditos: 1000, nota: 'Para probar: unos 6 shorts o 50 clips' },
+  { id: 'creador', nombre: 'Creador', precio: 24.99, creditos: 2800, nota: 'El más elegido: +12 % de regalo', destacado: true },
+  { id: 'pro', nombre: 'Pro', precio: 59.99, creditos: 7500, nota: 'Para publicar a diario: +25 % de regalo' },
+];
+var COSTES_CREDITOS = [
+  ['🎬', 'Vídeo de unos 8 minutos con imágenes', '~1.200'],
+  ['⚡', 'Short desde cero (60 s)', '150'],
+  ['✂️', 'Un clip (clipping)', '20'],
+  ['🌍', 'Doblar un vídeo a otro idioma', '150'],
+  ['🎞️', 'Animar un plano con IA (5 s)', '60–120'],
+  ['🖼️', 'Miniaturas de YouTube (3)', '60'],
+  ['🎙', 'Frase de contexto con voz (clipping)', '2'],
+  ['🧠', 'Estudios de nicho, ideas, guion, Mind', 'gratis'],
+];
+
+function vistaCreditosZona() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Producción', 'Créditos',
+    'Con los créditos se paga lo que cuesta generar: imágenes, voz y animación. Los estudios, las ideas y Mind son gratis. '
+    + '1 crédito = 1 céntimo. Antes de gastar, el estudio siempre te dice cuántos créditos va a usar.'));
+  caja.appendChild(h('div', { clase: 'caja-info creditos-aviso' },
+    h('b', {}, 'Muy pronto. '), 'Las recargas todavía no están activadas: de momento puedes seguir usando el estudio como hasta ahora.'));
+  caja.appendChild(h('section', { clase: 'creditos-saldo' },
+    h('div', {}, h('small', {}, 'Tus créditos'), h('b', {}, '—')),
+    h('span', { clase: 'crece' }),
+    h('button', { clase: 'primario', disabled: true }, 'Recargar (muy pronto)')));
+  caja.appendChild(cabeceraSeccion('Paquetes'));
+  caja.appendChild(h('div', { clase: 'creditos-paquetes' }, ...PAQUETES_CREDITOS.map(q => h('div', {
+    clase: 'creditos-paquete' + (q.destacado ? ' destacado' : '') },
+    q.destacado ? h('span', { clase: 'creditos-sello' }, 'Recomendado') : null,
+    h('h3', {}, q.nombre),
+    h('div', { clase: 'creditos-precio' }, `${q.precio.toFixed(2).replace('.', ',')} $`),
+    h('div', { clase: 'creditos-cantidad' }, `💎 ${q.creditos.toLocaleString('es-ES')} créditos`),
+    h('p', { clase: 'meta' }, q.nota),
+    h('button', { clase: q.destacado ? 'primario' : '', disabled: true }, 'Muy pronto')))));
+  caja.appendChild(cabeceraSeccion('Lo que cuesta cada cosa'));
+  caja.appendChild(h('div', { clase: 'creditos-tabla' }, ...COSTES_CREDITOS.map(([i, que, cuanto]) => h('div', { clase: 'creditos-fila' },
+    h('span', { clase: 'creditos-ico' }, i), h('span', { clase: 'crece' }, que),
+    h('b', {}, cuanto === 'gratis' ? 'Gratis' : `${cuanto} créditos`)))));
+  caja.appendChild(h('p', { clase: 'meta' }, 'Los precios son orientativos y pueden cambiar. Si algo falla al generar, los créditos se devuelven solos.'));
   return caja;
 }
