@@ -2190,6 +2190,10 @@ function estadoConfig() {
 }
 
 function conmutarConfig(abrir) {
+  if (esCuentaInvitada()) {
+    if (abrir !== false) irAZonaLight('ajustes');
+    return;
+  }
   const cajon = $('#config');
   const quiero = abrir === undefined ? cajon.classList.contains('plegado') : !!abrir;
   cajon.classList.toggle('plegado', !quiero);
@@ -5056,6 +5060,8 @@ function sliderRitmo(valor, alCambiar) {
    esconde lo que es de la instalacion (claves, saldo, copias). */
 var CUENTA_INFO = { rol: '', nombre: '', estudio: null };
 var ZONAS_SOLO_ADMIN = ['copias', 'presupuesto'];
+// las que solo tienen sentido en el estudio de OTRA cuenta (la admin tiene Configuración)
+var ZONAS_SOLO_CUENTA = ['ajustes'];
 
 function esCuentaInvitada() { return !!(CUENTA_INFO.estudio && CUENTA_INFO.estudio.cuenta); }
 
@@ -5443,6 +5449,8 @@ function marcaMind(clase) {
 }
 
 const ICONOS_MIND = {
+  ajustes: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19 12l2-1-1-3-2 .3-1.3-1.3.3-2-3-1-1 2h-2l-1-2-3 1 .3 2L6 7.7 4 7.4l-1 3 2 1v1.2l-2 1 1 3 2-.3 1.3 1.3-.3 2 3 1 1-2h2l1 2 3-1-.3-2 1.3-1.3 2 .3 1-3-2-1z',
+  tutorial: 'M4 5h16v12H8l-4 3z M8 9h8 M8 13h5',
   clipping: 'M6 4a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z M6 15a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z M8 8l12 9 M8 16l12-9',
   app: 'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z M11 18h2',
   copias: 'M4 7h16v12H4z M8 7V4h8v3 M12 11v5 M9.5 13.5 12 16l2.5-2.5',
@@ -5484,7 +5492,7 @@ const ZONAS_MIND = [
   { grupo: 'Producción', zonas: [
     ['piloto', 'Piloto automático'], ['avisos', 'Avisos'], ['cola', 'Cola'],
     ['presupuesto', 'Presupuesto'], ['copias', 'Copias de seguridad'], ['papelera', 'Papelera']] },
-  { grupo: 'Ayuda', zonas: [['app', 'App en el celular']] },
+  { grupo: 'Ayuda', zonas: [['tutorial', 'Cómo se usa'], ['app', 'App en el celular'], ['ajustes', 'Ajustes']] },
 ];
 const TITULO_ZONA = Object.fromEntries(ZONAS_MIND.flatMap(g => g.zonas));
 
@@ -5550,7 +5558,8 @@ function pintarLateralLight() {
     h('span', { clase: 'avatar' }, (nombre || 'M').slice(0, 1).toUpperCase()),
     h('span', { clase: 'crece' }, h('b', {}, esCuentaInvitada() ? (nombre || 'Mi estudio') : 'Mi estudio'), h('small', {}, gasto))));
   ZONAS_MIND.forEach(({ grupo, zonas: todas }) => {
-    const zonas = esCuentaInvitada() ? todas.filter(([id]) => !ZONAS_SOLO_ADMIN.includes(id)) : todas;
+    const zonas = esCuentaInvitada() ? todas.filter(([id]) => !ZONAS_SOLO_ADMIN.includes(id))
+      : todas.filter(([id]) => !ZONAS_SOLO_CUENTA.includes(id));
     if (!zonas.length) return;
     lateral.appendChild(h('div', { clase: 'lateral-grupo' }, grupo));
     zonas.forEach(([id, texto]) => {
@@ -6667,6 +6676,8 @@ function vistaGaleriaLight() {
   if (zona === 'marca') return vistaMarcaZona();
   if (zona === 'copias') return vistaCopiasZona();
   if (zona === 'app') return vistaAppZona();
+  if (zona === 'ajustes') return vistaAjustesZona();
+  if (zona === 'tutorial') return vistaTutorialZona();
   if (zona === 'clipping') return vistaClippingZona();
   if (zona === 'avisos') return vistaAvisosZona();
   if (zona === 'competencia') return vistaCompetenciaZona();
@@ -6998,11 +7009,14 @@ function vistaDocumentalesLight() {
   cargarClavesDoc();
   if (CLAVES_DOC.cargadas && !CLAVES_DOC.pexels && !CLAVES_DOC.pixabay) {
     caja.appendChild(h('div', { clase: 'caja-aviso' },
-      h('b', {}, 'Falta una clave para buscar vídeos reales. '),
-      'Crea una gratis en pexels.com/api o pixabay.com/api/docs y pégala en ',
-      h('button', { clase: 'enlace', onclick: () => $('#btn-config').click() },
-        'Configuración › Claves › Vídeo'),
-      '. Sin clave, el documental sale entero con IA.'));
+      ...(esCuentaInvitada()
+        ? [h('b', {}, 'Los vídeos reales aún no están activados en este estudio. '),
+          'Mientras tanto, el documental sale entero con IA.']
+        : [h('b', {}, 'Falta una clave para buscar vídeos reales. '),
+          'Crea una gratis en pexels.com/api o pixabay.com/api/docs y pégala en ',
+          h('button', { clase: 'enlace', onclick: () => $('#btn-config').click() },
+            'Configuración › Claves › Vídeo'),
+          '. Sin clave, el documental sale entero con IA.'])));
   }
 
   if (!['mezcla', 'maximo'].includes(l.modoDocumental)) l.modoDocumental = 'mezcla';
@@ -10867,9 +10881,9 @@ function filaRealLight() {
     conAyuda('Usa vídeos REALES de Pexels y Pixabay (gratis, con licencia para '
       + 'YouTube) en los planos donde encajan: lugares, naturaleza, ciudades, '
       + 'objetos, oficios. Claude elige cuáles y qué buscar, sin coste. El resto '
-      + 'sigue con IA y se puede animar con Veo abajo. Necesita la clave de '
-      + 'Pexels o de Pixabay en Configuración › Claves › Vídeo. Se aplica al '
-      + 'pulsar «Regenerar Vídeo».',
+      + 'sigue con IA y se puede animar con Veo abajo. '
+      + (esCuentaInvitada() ? '' : 'Necesita la clave de Pexels o de Pixabay en Configuración › Claves › Vídeo. ')
+      + 'Se aplica al pulsar «Regenerar Vídeo».',
       h('b', {}, 'Vídeos reales')),
     sel);
 }
@@ -10920,9 +10934,9 @@ function filaVeoLight() {
   }, MODOS_VIDEO_IA.map(([valor, texto]) => h('option', { value: valor }, texto)));
   const fila = h('div', { clase: 'fila' },
     conAyuda('Anima los planos con IA de vídeo: Google Veo primero y, si se '
-      + 'queda sin cuota, fal.ai. Debajo eliges CUÁNTOS planos. Necesita la '
-      + 'clave de Google (o la de fal.ai) en Configuración › Claves. Se aplica '
-      + 'al pulsar «Regenerar Vídeo».',
+      + 'queda sin cuota, fal.ai. Debajo eliges CUÁNTOS planos. '
+      + (esCuentaInvitada() ? '' : 'Necesita la clave de Google (o la de fal.ai) en Configuración › Claves. ')
+      + 'Se aplica al pulsar «Regenerar Vídeo».',
       h('b', {}, 'Planos en movimiento')),
     sel);
   if (!v.videoIa) return fila;
@@ -11113,7 +11127,8 @@ function conexionesDeEstilo(ficha) {
   const filaYt = h('div', { clase: 'fila conexion' },
     h('span', { clase: 'ico-pub youtube' }, '▶'), h('b', {}, 'YouTube'),
     h('span', { clase: 'crece meta' }, yt.canal ? `conectado: «${yt.canal}»`
-      : con.app_youtube ? 'sin conectar' : 'falta la app de Google en Configuración › Claves › Publicar'));
+      : con.app_youtube ? 'sin conectar' : (esCuentaInvitada() ? 'aún no disponible en este estudio'
+        : 'falta la app de Google en Configuración › Claves › Publicar')));
   if (yt.canal) {
     filaYt.appendChild(h('button', {
       clase: 'mini fantasma peligro', onclick: async () => {
@@ -11135,7 +11150,8 @@ function conexionesDeEstilo(ficha) {
     const filaRed = h('div', { clase: 'fila conexion' },
       h('span', { clase: `ico-pub ${id}` }, ico), h('b', {}, nombre),
       h('span', { clase: 'crece meta' }, c.cuenta ? `conectado: «${c.cuenta}»`
-        : hayApp ? 'sin conectar' : `falta la app de ${nombre} en Configuración › Claves › Publicar`));
+        : hayApp ? 'sin conectar' : (esCuentaInvitada() ? 'aún no disponible en este estudio'
+          : `falta la app de ${nombre} en Configuración › Claves › Publicar`)));
     if (id === 'facebook' && (c.paginas || []).length) {
       filaRed.appendChild(h('select', {
         title: 'La página donde se publica',
@@ -13671,6 +13687,15 @@ const TARJETAS_INICIO = [
    pantalla de verdad, no encima de un «cargando…». Un servidor sin la marca
    (una versión anterior) no la enseña nunca. */
 async function decidirOnboarding() {
+  if (!CUENTA_INFO.estudio) {
+    try { CUENTA_INFO.estudio = await pedir(`${BASE}/api/cuenta`); } catch (e) { /* estudio viejo */ }
+  }
+  if (esCuentaInvitada()) {
+    let vista = false;
+    try { vista = localStorage.getItem('mind.bienvenida.vista') === '1'; } catch (e) { /* sin almacén */ }
+    if (!vista) abrirBienvenida(0);
+    return;
+  }
   try {
     const r = await pedir(API.ajustes());
     if (r.ajustes && r.ajustes.onboarding_visto === false) abrirInicio(0);
@@ -14316,7 +14341,7 @@ function pintarAsistente() {
   pastilla.appendChild(pastillaEstado(listo ? 'ok' : 'error',
     !estado ? 'mirando…'
       : ASISTENTE.probando ? 'comprobando…'
-        : (listo ? ((estado.cuenta || {}).correo || 'con sesión')
+        : (listo ? (esCuentaInvitada() ? 'disponible' : ((estado.cuenta || {}).correo || 'con sesión'))
           : (conCupoAgotado ? 'sin cupo' : (conSesion ? 'no contesta' : 'sin sesión')))));
 
   const cuerpo = vaciar($('#asistente-cuerpo'));
@@ -14342,6 +14367,11 @@ function pintarAsistente() {
    para arreglarlo: sin sesión, entrar; con el cupo agotado, la fecha en que se
    renueva y probar otra cuenta; con la sesión caducada, volver a entrar. */
 function puertaDelAsistente(estado) {
+  if (esCuentaInvitada()) {
+    return h('div', { clase: 'asistente-puerta' },
+      h('div', { clase: 'caja-aviso' }, 'Mind no está disponible en este momento. Vuelve a intentarlo en un rato.'),
+      h('div', { clase: 'fila' }, h('button', { clase: 'mini', onclick: () => refrescarEstadoAsistente() }, 'Volver a mirar')));
+  }
   const cuentas = estado.cuentas || [];
   const conSesion = cuentas.filter(c => c.sesion);
   if (ASISTENTE.probando) {
@@ -14531,7 +14561,10 @@ function vistaAvisosZona() {
   const telegram = h('section', { clase: 'bloque-shorts conexiones' },
     h('div', { clase: 'light-cab' }, h('h2', {}, '📱 En el móvil (Telegram)'),
       h('span', { clase: 'meta' }, tg.bot ? `bot @${tg.bot}` : 'sin bot todavía')));
-  if (!tg.listo) {
+  if (!tg.listo && esCuentaInvitada()) {
+    telegram.appendChild(h('p', { clase: 'meta' }, 'Los avisos al móvil todavía no están activados en este estudio. '
+      + 'Mientras tanto, aquí en la campana verás todo lo que pase.'));
+  } else if (!tg.listo) {
     telegram.appendChild(h('ol', { clase: 'mejoras' },
       h('li', {}, 'En Telegram, abre @BotFather, escribe /newbot y ponle un nombre (p. ej. «Mind Videos avisos»).'),
       h('li', {}, 'Te da un token. Pégalo en ⚙ Configuración › Claves › Avisos.'),
@@ -15460,5 +15493,133 @@ function vistaClippingZona() {
   });
   const t = CLIPPING.clipPub;
   if (t && APP.light.trabajadoAbierto === t.id) caja.appendChild(panelPublicarTrabajado(t));
+  return caja;
+}
+
+/* ============================================= LA BIENVENIDA DE UNA CUENTA
+ *
+ * Quien entra con una cuenta (no la admin) no ve claves ni servicios: eso es
+ * de la instalacion. Ve una bienvenida y un tutorial corto de como se usa, y
+ * nada mas. Sale la primera vez (se recuerda en este navegador) y siempre en
+ * Ayuda › Cómo se usa.
+ */
+var PASOS_TUTORIAL = [
+  { icono: '👋', titulo: 'Bienvenido a Mind Videos',
+    texto: 'Convierte tus ideas en vídeos narrados con imágenes, en shorts y en clips listos para publicar. '
+      + 'Tú pones la idea; el estudio escribe el guion, pone la voz, dibuja y monta.' },
+  { icono: '🎨', titulo: '1 · Crea tu estilo',
+    texto: 'El estilo es tu canal: cómo se dibuja, qué voz lo narra y en qué tono habla. '
+      + 'Ve a «Mis estilos» › «Crear estilo», descríbelo y el estudio lo prepara. Todos tus vídeos saldrán con él.',
+    ir: ['videos', 'Ir a Mis estilos'] },
+  { icono: '🎬', titulo: '2 · Haz tu primer vídeo',
+    texto: 'Elige el estilo, escribe o pega de qué va el vídeo y pulsa «Generar». '
+      + 'Antes de gastar nada te dice lo que cuesta. Mientras se hace, puedes seguir usando la app.',
+    ir: ['todos', 'Ir a Vídeos'] },
+  { icono: '⚡', titulo: '3 · Shorts y clips',
+    texto: '«Shorts» crea vídeos verticales desde cero. «Short trabajado» edita un vídeo tuyo. '
+      + '«Clipping» saca los mejores momentos de un vídeo largo, con subtítulos, música y efectos.',
+    ir: ['clipping', 'Ver Clipping'] },
+  { icono: '🚀', titulo: '4 · Publica y automatiza',
+    texto: 'En «Publicar» conectas tu YouTube, TikTok y Facebook. Con el «Piloto automático» el estudio '
+      + 'hace y publica vídeos por ti cada semana. Y si tienes cualquier duda, pregúntale a Mind (el botón de abajo).',
+    ir: ['publicar', 'Ir a Publicar'] },
+];
+var BIENVENIDA = { paso: 0 };
+
+function abrirBienvenida(paso) {
+  BIENVENIDA.paso = Math.max(0, Math.min(PASOS_TUTORIAL.length - 1, paso || 0));
+  if (!$('#inicio')) document.body.appendChild(h('div', { id: 'inicio' }, h('div', { clase: 'cuadro bienvenida' })));
+  pintarBienvenida();
+}
+
+function cerrarBienvenida(ir) {
+  try { localStorage.setItem('mind.bienvenida.vista', '1'); } catch (e) { /* sin almacén */ }
+  const capa = $('#inicio');
+  if (capa) capa.remove();
+  if (ir) irAZonaLight(ir);
+}
+
+function pintarBienvenida() {
+  const capa = $('#inicio');
+  if (!capa) return;
+  const cuadro = vaciar(capa.querySelector('.cuadro'));
+  const n = BIENVENIDA.paso;
+  const paso = PASOS_TUTORIAL[n];
+  const ultimo = n === PASOS_TUTORIAL.length - 1;
+  cuadro.appendChild(h('div', { clase: 'inicio-cab' },
+    h('div', { clase: 'inicio-puntos' }, PASOS_TUTORIAL.map((t, i) => h('span', { clase: i < n ? 'hecho' : (i === n ? 'actual' : '') }))),
+    h('span', { clase: 'crece' }),
+    h('button', { clase: 'mini fantasma', onclick: () => cerrarBienvenida() }, 'Saltar')));
+  cuadro.appendChild(h('div', { clase: 'bienvenida-cuerpo' },
+    h('div', { clase: 'bienvenida-icono' }, paso.icono),
+    h('h2', {}, paso.titulo),
+    h('p', {}, paso.texto)));
+  cuadro.appendChild(h('div', { clase: 'inicio-pie' },
+    n > 0 ? h('button', { clase: 'mini fantasma', onclick: () => { BIENVENIDA.paso = n - 1; pintarBienvenida(); } }, '‹ Atrás') : null,
+    h('span', { clase: 'crece' }),
+    paso.ir && !ultimo ? h('button', { clase: 'mini', onclick: () => cerrarBienvenida(paso.ir[0]) }, paso.ir[1]) : null,
+    ultimo
+      ? h('button', { clase: 'primario', onclick: () => cerrarBienvenida('videos') }, '¡Empezar!')
+      : h('button', { clase: 'primario', onclick: () => { BIENVENIDA.paso = n + 1; pintarBienvenida(); } }, 'Siguiente ›')));
+}
+
+/* Ayuda › Cómo se usa: el mismo tutorial, en página. */
+function vistaTutorialZona() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Ayuda', 'Cómo se usa', 'Lo básico de Mind Videos en cinco pasos.'));
+  PASOS_TUTORIAL.forEach(p => caja.appendChild(h('section', { clase: 'bloque-shorts tutorial-paso' },
+    h('div', { clase: 'bienvenida-icono' }, p.icono),
+    h('div', { clase: 'crece' }, h('h2', {}, p.titulo), h('p', { clase: 'meta' }, p.texto),
+      p.ir ? h('button', { clase: 'mini', onclick: () => irAZonaLight(p.ir[0]) }, p.ir[1]) : null))));
+  caja.appendChild(h('div', { clase: 'fila' }, h('button', { clase: 'mini', onclick: () => abrirBienvenida(0) }, 'Ver la bienvenida otra vez')));
+  return caja;
+}
+
+/* LOS AJUSTES DE UNA CUENTA: idioma, sus redes, el piloto, los avisos y su
+   cuenta. Nada de claves ni servicios: eso lo gestiona el administrador. */
+var IDIOMAS_APP = [['es', 'Español'], ['en', 'English (muy pronto)']];
+
+function idiomaApp() {
+  try { return localStorage.getItem('mind.idioma') || 'es'; } catch (e) { return 'es'; }
+}
+
+function vistaAjustesZona() {
+  const caja = h('div', { clase: 'casa-light' });
+  caja.appendChild(cabeceraZona('Ayuda', 'Ajustes', 'Tu idioma, tus redes sociales y tu cuenta.'));
+  const actual = idiomaApp();
+  caja.appendChild(h('section', { clase: 'bloque-shorts' },
+    h('h2', {}, '🌐 Idioma'),
+    h('div', { clase: 'tira-modos' }, ...IDIOMAS_APP.map(([id, t]) => h('button', {
+      clase: 'mini' + (actual === id ? ' activo' : ''),
+      onclick: () => {
+        try { localStorage.setItem('mind.idioma', id); } catch (e) { /* sin almacén */ }
+        toast(id === 'en' ? 'English is coming very soon: we will switch automatically.' : 'idioma: español');
+        pintarLight();
+      },
+    }, t))),
+    h('p', { clase: 'meta' }, 'Los vídeos se hacen en el idioma que elijas en cada estilo, sea cual sea el de la app.')));
+  const estilos = presetsLight();
+  caja.appendChild(h('section', { clase: 'bloque-shorts' },
+    h('h2', {}, '🔗 Tus redes sociales'),
+    h('p', { clase: 'meta' }, 'Cada estilo publica en sus propias cuentas de YouTube, TikTok y Facebook. Conéctalas en Publicar.'),
+    estilos.length
+      ? h('div', { clase: 'fila' }, ...estilos.map(f => h('button', { clase: 'mini', onclick: () => irASeccionConEstilo('publicar', f.id) },
+        `Conectar las redes de «${f.nombre}»`)))
+      : h('p', { clase: 'meta' }, 'Primero crea un estilo en «Mis estilos».')));
+  caja.appendChild(h('section', { clase: 'bloque-shorts' },
+    h('h2', {}, '🤖 Piloto automático y avisos'),
+    h('div', { clase: 'fila' },
+      h('button', { clase: 'mini', onclick: () => irAZonaLight('piloto') }, 'Piloto automático'),
+      h('button', { clase: 'mini', onclick: () => irAZonaLight('avisos') }, 'Avisos'),
+      h('button', { clase: 'mini', onclick: () => irAZonaLight('app') }, 'Instalar la app en el móvil'))));
+  const est = CUENTA_INFO.estudio || {};
+  caja.appendChild(h('section', { clase: 'bloque-shorts' },
+    h('h2', {}, '👤 Tu cuenta'),
+    h('p', {}, h('b', {}, CUENTA_INFO.nombre || est.cuenta || '')),
+    h('p', { clase: 'meta' }, `Gastado este mes: ${Number(est.gastado_mes || 0).toFixed(2)} $`
+      + (est.tope_mes_usd != null ? ` de ${Number(est.tope_mes_usd).toFixed(2)} $` : '')),
+    h('div', { clase: 'fila' },
+      h('button', { clase: 'mini', onclick: () => abrirBienvenida(0) }, 'Ver el tutorial'),
+      h('button', { clase: 'mini fantasma peligro', onclick: () => salirDeStudio() }, 'Cerrar sesión'))));
   return caja;
 }

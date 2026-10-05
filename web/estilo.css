@@ -3105,3 +3105,13 @@ a.lateral-item.panel-admin { text-decoration: none; color: var(--acento); }
 
 .programar-clip { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--linea-suave); display: flex; flex-direction: column; gap: 8px; }
 .programar-clip .fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* la bienvenida y el tutorial de una cuenta */
+#inicio .cuadro.bienvenida { width: min(520px, 100%); text-align: center; }
+.bienvenida-cuerpo { padding: 18px 6px 4px; }
+.bienvenida-cuerpo h2 { font-size: 22px; margin: 10px 0 10px; }
+.bienvenida-cuerpo p { color: var(--tenue); line-height: 1.6; font-size: 15px; margin: 0 auto; max-width: 420px; }
+.bienvenida-icono { font-size: 44px; line-height: 1; }
+.tutorial-paso { display: flex; gap: 16px; align-items: flex-start; }
+.tutorial-paso .bienvenida-icono { font-size: 30px; }
+.tutorial-paso h2 { margin: 0 0 4px; font-size: 17px; }

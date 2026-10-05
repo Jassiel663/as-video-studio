@@ -847,6 +847,33 @@ async def _limites_de_la_cuenta(peticion, siguiente):
     return await siguiente(peticion)
 
 
+#: Un correo, en cualquier sitio de un texto.
+CORREO = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+
+@app.middleware("http")
+async def _sin_datos_del_admin(peticion, siguiente):
+    """En el estudio de OTRA cuenta no sale NADA privado del admin.
+
+    Ese estudio usa las sesiones y claves de la instalacion, y varias rutas
+    las describen (con que cuenta de Claude contesta Mind, su plan, el saldo de
+    cada proveedor...). Aqui se limpia la respuesta ENTERA antes de salir: los
+    correos se borran estén donde estén y el plan se vacia; el saldo de los
+    proveedores no se da. Asi no depende de acordarse de cada pantalla."""
+    if CUENTA and peticion.method == "GET" and peticion.url.path == "/api/saldo":
+        return JSONResponse({"cuentas": {}, "bajos": []})
+    respuesta = await siguiente(peticion)
+    if not CUENTA or not peticion.url.path.startswith("/api/") \
+            or "application/json" not in (respuesta.headers.get("content-type") or ""):
+        return respuesta
+    cuerpo = b"".join([trozo async for trozo in respuesta.body_iterator]).decode("utf-8", "replace")
+    cuerpo = CORREO.sub("", cuerpo)
+    cuerpo = re.sub(r'"plan":\s*"[^"]*"', '"plan": ""', cuerpo)
+    cabeceras = {k: v for k, v in respuesta.headers.items() if k.lower() != "content-length"}
+    return Response(content=cuerpo, status_code=respuesta.status_code, headers=cabeceras,
+                    media_type="application/json")
+
+
 @app.get("/api/cuenta")
 def leer_cuenta():
     """De quien es este estudio y como va su gasto del mes (la cuenta admin: cuenta = '')."""

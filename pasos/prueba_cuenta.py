@@ -81,6 +81,16 @@ try:
         comprobar(f"{metodo} {ruta}: 403", r.status_code == 403, (r.status_code, r.text[:100]))
     comprobar("y no se ha escrito ninguna clave", not os.path.exists(os.path.join(D, "secretos", "claves.json")))
 
+    print("\n== nada privado del admin ==")
+    r = requests.post(B + "/api/proyectos", json={"nombre": "Video de admin@ejemplo.com"}, timeout=20)
+    lista = requests.get(B + "/api/proyectos", timeout=20).text
+    comprobar("ningun correo sale del estudio de una cuenta (se borran de las respuestas)",
+              r.status_code in (200, 201) and "admin@ejemplo.com" not in lista and "Video de" in lista, (r.status_code, lista[:200]))
+    saldo = requests.get(B + "/api/saldo", timeout=10).json()
+    comprobar("ni el saldo de los proveedores", saldo == {"cuentas": {}, "bajos": []}, saldo)
+    asistente = requests.get(B + "/api/asistente", timeout=20).text
+    comprobar("ni la cuenta de Claude de Mind", "@" not in asistente, asistente[:200])
+
     print("\n== /api/cuenta ==")
     c = requests.get(B + "/api/cuenta", timeout=10).json()
     comprobar("de quien es, su tope y su gasto de ESTE mes",
